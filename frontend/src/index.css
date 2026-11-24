@@ -1,0 +1,43 @@
+/*
+ * Tailwind CSS v4: one import, no config file.
+ * Design tokens live in @theme below. Every token becomes a utility class
+ * (e.g. --color-brand-600 → bg-brand-600, text-brand-600, border-brand-600).
+ */
+@import "tailwindcss";
+
+@theme {
+  /* Cedar green, the main brand colour. */
+  --color-brand-50: #f0fdf4;
+  --color-brand-100: #dcfce7;
+  --color-brand-200: #bbf7d0;
+  --color-brand-300: #86efac;
+  --color-brand-500: #22c55e;
+  --color-brand-600: #16a34a;
+  --color-brand-700: #15803d;
+  --color-brand-800: #166534;
+  --color-brand-900: #14532d;
+
+  /* Mediterranean blue, the accent colour. */
+  --color-sea-50: #eff6ff;
+  --color-sea-500: #0ea5e9;
+  --color-sea-600: #0284c7;
+  --color-sea-700: #0369a1;
+
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+
+@layer base {
+  html {
+    @apply bg-stone-50 text-stone-800 antialiased;
+  }
+
+  /* A visible focus ring for keyboard users on every interactive element. */
+  :focus-visible {
+    @apply outline-2 outline-offset-2 outline-brand-600;
+  }
+
+  /* Native <dialog> backdrop (see components/ui/Dialog.tsx). */
+  dialog::backdrop {
+    background: rgb(28 25 23 / 0.5);
+  }
+}

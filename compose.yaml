@@ -1,0 +1,114 @@
+# Development stack. Start it with `make up` (or `docker compose up -d`).
+#
+#   Browser ──► frontend (Vite, :5173) ──proxy /api, /sanctum, /storage──► nginx ──► php (Laravel)
+#                                                                                      │
+#                                         queue (sends e-mails in the background) ◄────┤
+#                                                                                      ▼
+#                                                                                  db (Postgres)
+#
+# Every published port is bound to 127.0.0.1 only. Nothing in this stack is
+# reachable from other machines on your network, which matters because the
+# database has a well-known development password.
+#
+# The same file works on Windows (Docker inside WSL 2) and macOS (Docker
+# Desktop, OrbStack or Colima, Intel or Apple Silicon): every image used here
+# is published for both amd64 and arm64.
+
+name: lebanon-tourism
+
+# YAML anchor: settings shared by every service that runs the PHP image.
+x-php: &php
+  build:
+    context: .
+    dockerfile: docker/php/Dockerfile
+    target: dev
+    args:
+      UID: ${UID:-1000}
+      GID: ${GID:-1000}
+  image: lebanon-tourism-php:dev
+  volumes:
+    - ./backend:/var/www/backend
+  depends_on:
+    db:
+      condition: service_healthy
+  restart: unless-stopped
+
+services:
+  php:
+    <<: *php
+    environment:
+      # Only this service runs migrations on start-up (see entrypoint.sh).
+      RUN_MIGRATIONS: "true"
+
+  queue:
+    <<: *php
+    # E-mails (verification, password reset, ...) are queued so that an HTTP
+    # request never waits for a slow SMTP server.
+    command: ["php", "artisan", "queue:work", "--tries=3", "--backoff=10"]
+    depends_on:
+      php:
+        condition: service_started
+
+  nginx:
+    image: nginx:1.29-alpine
+    ports:
+      - "127.0.0.1:${API_PORT:-8080}:80"
+    volumes:
+      - ./docker/nginx/dev.conf:/etc/nginx/conf.d/default.conf:ro
+      # nginx only needs the public folder (for index.php's path) and the
+      # uploaded files it serves directly. It never sees the rest of the code.
+      - ./backend/public:/var/www/backend/public:ro
+      - ./backend/storage/app/public:/var/www/backend/storage/app/public:ro
+    depends_on:
+      - php
+    restart: unless-stopped
+
+  frontend:
+    image: node:24-trixie-slim
+    user: "${UID:-1000}:${GID:-1000}"
+    working_dir: /app
+    command: ["sh", "-c", "[ -d node_modules ] || npm ci; exec npm run dev"]
+    environment:
+      npm_config_cache: /tmp/npm
+      # Vite forwards API calls to nginx inside the Docker network.
+      VITE_API_PROXY_TARGET: http://nginx
+      # Only needed for projects on a Windows drive mounted in WSL (/mnt/<drive>),
+      # which emits no Linux file-change events. `make env` sets it for you.
+      VITE_USE_POLLING: ${VITE_USE_POLLING:-false}
+    ports:
+      - "127.0.0.1:${FRONTEND_PORT:-5173}:5173"
+    volumes:
+      - ./frontend:/app
+    depends_on:
+      - nginx
+    restart: unless-stopped
+
+  db:
+    image: postgres:18
+    environment:
+      POSTGRES_DB: lebanon_tourism
+      POSTGRES_USER: lebanon_tourism
+      POSTGRES_PASSWORD: secret
+    ports:
+      # Published so you can connect a GUI client (DBeaver, TablePlus, ...).
+      - "127.0.0.1:${DB_PORT:-54320}:5432"
+    volumes:
+      # Postgres 18 images keep their data under /var/lib/postgresql/<version>.
+      - pgdata:/var/lib/postgresql
+      - ./docker/postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U lebanon_tourism -d lebanon_tourism"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  mailpit:
+    # Catches every e-mail the app sends. Open http://localhost:8025 to read them.
+    image: axllent/mailpit:v1.27
+    ports:
+      - "127.0.0.1:${MAILPIT_PORT:-8025}:8025"
+    restart: unless-stopped
+
+volumes:
+  pgdata:

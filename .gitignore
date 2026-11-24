@@ -1,0 +1,9 @@
+# Local environment files hold secrets and per-machine settings.
+.env
+.env.production
+
+# Editors and OS files
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db

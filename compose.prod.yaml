@@ -1,0 +1,74 @@
+# Production-like stack, as an example of how the pieces fit together.
+#
+#   docker compose -f compose.prod.yaml --env-file .env.production up -d --build
+#
+# Differences from the development stack (compose.yaml):
+#   - Code is baked into the images. Nothing is bind-mounted from your disk.
+#   - The React app is pre-built and served by nginx as static files.
+#   - Secrets come from environment variables (see backend/.env.production.example),
+#     never from a file committed to git.
+#   - There is no Mailpit. A real SMTP provider is configured instead.
+#
+# Real deployments usually also put a TLS-terminating proxy in front of nginx
+# and use a managed Postgres. See docs/09-deployment.md.
+
+name: lebanon-tourism-prod
+
+x-php: &php
+  build:
+    context: .
+    dockerfile: docker/php/Dockerfile
+    target: prod
+  image: lebanon-tourism-php:prod
+  env_file: .env.production
+  volumes:
+    - uploads:/var/www/backend/storage/app/public
+  depends_on:
+    db:
+      condition: service_healthy
+  restart: unless-stopped
+
+services:
+  php:
+    <<: *php
+    environment:
+      RUN_MIGRATIONS: "true"
+
+  queue:
+    <<: *php
+    command: ["php", "artisan", "queue:work", "--tries=3", "--backoff=10", "--max-time=3600"]
+
+  scheduler:
+    <<: *php
+    # Runs scheduled housekeeping (see routes/console.php).
+    command: ["php", "artisan", "schedule:work"]
+
+  nginx:
+    build:
+      context: .
+      dockerfile: docker/nginx/Dockerfile
+      target: prod
+    image: lebanon-tourism-nginx:prod
+    ports:
+      - "${HTTP_PORT:-80}:80"
+    volumes:
+      - uploads:/var/www/backend/storage/app/public:ro
+    depends_on:
+      - php
+    restart: unless-stopped
+
+  db:
+    image: postgres:18
+    env_file: .env.production
+    volumes:
+      - pgdata:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  uploads:

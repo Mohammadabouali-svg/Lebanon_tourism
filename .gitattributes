@@ -1,0 +1,9 @@
+# Store every text file with LF line endings, even when edited on Windows.
+# Shell scripts with Windows (CRLF) endings fail inside Linux containers with
+# confusing errors such as "/bin/sh^M: bad interpreter".
+* text=auto eol=lf
+
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.webp binary
