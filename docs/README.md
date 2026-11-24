@@ -15,6 +15,7 @@ Read in order the first time. Later, jump to the chapter you need.
 | [08 Testing](08-testing.md) | How the test suite works and how to write a new test |
 | [09 Deployment](09-deployment.md) | Production images, configuration, a go-live checklist |
 | [10 Exercises](10-exercises.md) | Features left for you to build, roughly easiest first |
+| [Exercise write-ups](exercises/README.md) | One file per finished exercise: what was asked, decided, done and verified |
 
 ## How to read the code
 

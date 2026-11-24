@@ -12,10 +12,16 @@ frontend type and form, the detail page, and a test. Good for learning the
 path of a field through every layer ([chapter 04](04-database.md#changing-the-schema)).
 *Implemented:* see migration `2026_11_10_000100_add_meeting_point_to_tours`
 and the `meeting_point` tests in `TourManagementTest` and `TourCatalogTest`.
+Write-up: [exercises/01-meeting-point.md](exercises/01-meeting-point.md).
 
 **2. Price limit.** Operators may not set a price above $10,000. Write the
 failing test first (the test is already sketched in
 [chapter 08](08-testing.md#writing-a-test-for-a-new-feature)).
+*Implemented:* `max:1000000` and a readable message in `TourRequest`, a hint
+on the operator form, the price tests in `TourManagementTest`, and
+[D17](decisions.md#d17-the-tour-price-cap-is-validation-only-not-a-database-constraint)
+for why there is no database constraint. Write-up:
+[exercises/02-price-limit.md](exercises/02-price-limit.md).
 
 **3. "Sold out" badge.** The API already returns `available_spots` and
 `is_bookable`. Show a badge on tour cards and hide the book button. Pure
