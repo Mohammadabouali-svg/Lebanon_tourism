@@ -395,7 +395,7 @@ browser redirect → card data never touches our server.
 
 | Need | Read |
 |---|---|
-| Why a choice was made | `docs/decisions.md` (D1–D16) |
+| Why a choice was made | `docs/decisions.md` (D1–D17) |
 | Setup / troubleshooting | `docs/01-getting-started.md` |
 | Request path, folder map | `docs/02-architecture.md` |
 | Sessions, CSRF, roles, policies | `docs/03-authentication.md` |
@@ -406,6 +406,7 @@ browser redirect → card data never touches our server.
 | Tests | `docs/08-testing.md` |
 | Production | `docs/09-deployment.md` |
 | Planned work | `docs/10-exercises.md` |
+| What each finished exercise did | `docs/exercises/` (one `.md` per exercise; add one when an exercise lands) |
 
 ## 11. Current work: the exercises (`docs/10-exercises.md`)
 
@@ -417,7 +418,7 @@ that #5 and #9 depend on). Update the status column as work lands.
 |---|---|---|---|
 | R | Reading exercises | Password broker, Sanctum stateful, route middleware audit | todo |
 | 1 | Meeting point | Optional `meeting_point` (string 255, public) on tours; migration `2026_11_10_000100`, 5 tests in `TourManagementTest` / `TourCatalogTest` | done: verified 2026-11-24 (90 tests pass, build + lint + pint OK, shown on tour page) |
-| 2 | Price limit | `max:1000000` cents in `TourRequest`; test sketched in docs/08 | todo |
+| 2 | Price limit | `max:1000000` cents in `TourRequest` (was $100,000) + readable message + form hint; validation only, no CHECK (D17); 3 tests in `TourManagementTest` | done: 2026-11-24 |
 | 3 | Sold-out badge | Frontend only; uses `available_spots`, `is_bookable` | todo |
 | 5 | Expire stale pending bookings | Artisan command, 15 min; `BookingService::releaseSpots()` is private today, so expose a deliberate public method; schedule in `routes/console.php` (scheduler runs only in prod compose: test the command directly); `travel()` | todo |
 | 6 | Admin moderation lock | `moderated_at`; discuss policy vs request vs service first | todo |

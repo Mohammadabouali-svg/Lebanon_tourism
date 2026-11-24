@@ -29,7 +29,9 @@ class TourRequest extends FormRequest
             'meeting_point' => ['nullable', 'string', 'max:255'],
             'city_id' => ['required', 'integer', 'exists:cities,id'],
             'category_id' => ['required', 'integer', 'exists:categories,id'],
-            'price_cents' => ['required', 'integer', 'min:100', 'max:10000000'],
+            // $1.00 to $10,000.00 (inclusive). The cap is a business limit
+            // (docs/decisions.md D17), so it lives here and not in a DB CHECK.
+            'price_cents' => ['required', 'integer', 'min:100', 'max:1000000'],
             'capacity' => ['required', 'integer', 'min:1', 'max:500'],
             // New tours must start in the future. An existing tour keeps its
             // (possibly past) date when other fields are edited.
@@ -68,6 +70,19 @@ class TourRequest extends FormRequest
                     }
                 }
             },
+        ];
+    }
+
+    /**
+     * The default `max` message would print the limit in cents
+     * ("must not be greater than 1000000"), which means nothing to an operator.
+     *
+     * @return array<string, string>
+     */
+    public function messages(): array
+    {
+        return [
+            'price_cents.max' => 'The price may not be more than $10,000.',
         ];
     }
 

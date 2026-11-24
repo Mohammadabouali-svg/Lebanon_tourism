@@ -178,7 +178,15 @@ function TourForm({ tour, reference }: { tour: Tour | null; reference: Reference
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <TextField label="First day" type="date" min={tour ? undefined : todayIso(1)} {...field('starts_on')} error={errors.starts_on} />
             <TextField label="Last day" type="date" min={values.starts_on || undefined} {...field('ends_on')} error={errors.ends_on} />
-            <TextField label="Price per person (USD)" inputMode="decimal" placeholder="65.00" {...field('price')} error={priceError ?? errors.price_cents} />
+            {/* The hint is guidance only: the API enforces the $10,000 cap (TourRequest). */}
+            <TextField
+              label="Price per person (USD)"
+              inputMode="decimal"
+              placeholder="65.00"
+              {...field('price')}
+              error={priceError ?? errors.price_cents}
+              hint="Between $1 and $10,000."
+            />
             <TextField
               label="Capacity"
               type="number"

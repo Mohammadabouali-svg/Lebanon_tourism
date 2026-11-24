@@ -121,6 +121,39 @@ class TourManagementTest extends TestCase
         $this->assertDatabaseCount('tours', 0);
     }
 
+    public function test_prices_above_ten_thousand_dollars_are_refused(): void
+    {
+        $this->actingAs($this->operator)
+            ->postJson('/api/operator/tours', $this->validPayload(['price_cents' => 1_000_001]))
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['price_cents' => 'The price may not be more than $10,000.']);
+
+        $this->assertDatabaseCount('tours', 0);
+    }
+
+    public function test_a_price_of_exactly_ten_thousand_dollars_is_accepted(): void
+    {
+        // The limit is inclusive: $10,000.00 itself is allowed.
+        $this->actingAs($this->operator)
+            ->postJson('/api/operator/tours', $this->validPayload(['price_cents' => 1_000_000]))
+            ->assertCreated()
+            ->assertJsonPath('data.price_cents', 1_000_000);
+
+        $this->assertDatabaseHas('tours', ['price_cents' => 1_000_000]);
+    }
+
+    public function test_the_price_limit_also_applies_when_updating_a_tour(): void
+    {
+        $tour = Tour::factory()->for($this->operator, 'operator')->create(['price_cents' => 14_000]);
+
+        $this->actingAs($this->operator)
+            ->putJson("/api/operator/tours/{$tour->id}", $this->validPayload(['price_cents' => 1_000_001]))
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors('price_cents');
+
+        $this->assertSame(14_000, $tour->fresh()->price_cents);
+    }
+
     public function test_itinerary_days_must_fit_inside_the_tour(): void
     {
         $this->actingAs($this->operator)

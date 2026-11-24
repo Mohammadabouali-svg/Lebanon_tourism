@@ -176,3 +176,30 @@ To keep the project teachable, some things are listed as exercises instead of
 being built: e-mail address change with re-verification, cleanup of stale
 `pending` card bookings, a real Stripe driver, recurring departures, full-text
 search, admin "lock" on moderated tours. See [10-exercises.md](10-exercises.md).
+
+## D17. The tour price cap is validation only, not a database constraint
+
+**Context.** Exercise 2 caps tour prices at $10,000 (`max:1000000` cents in
+`TourRequest`). Invariant 15 says critical rules are also database
+constraints, so a `CHECK (price_cents <= 1000000)` was considered.
+
+**Decision.** The cap lives only in `TourRequest`. The existing
+`tours_price_positive CHECK (price_cents > 0)` stays the database's guard.
+
+**Why.** Constraints protect *integrity*: a negative price or an overbooked
+tour is corrupt data, whatever the product wants. A price of $12,000 is not
+corrupt, it is just above today's business policy, and policies change. Every
+change of a CHECK needs a migration, and adding one to a live table fails
+outright if any existing row breaks it. The only way to write a tour price is
+the operator create/update endpoint, which always runs `TourRequest`, so a
+hostile client (curl) cannot get round the rule.
+
+**Consequences.** Server code (seeders, tinker, a future import) could store
+a higher price. A tour created before the cap with a higher price can still
+be read and booked, but must be lowered to $10,000 before the operator can
+save any edit to it.
+
+**Rejected.** A `CHECK` constraint (couples a product limit to the schema;
+would need `NOT VALID` or a data clean-up on a real database). Enforcing the
+limit in `TourService` (it is a plain input bound, which is the Form
+Request's job, and the 422 field error is what the form displays).

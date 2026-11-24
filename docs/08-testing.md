@@ -112,9 +112,11 @@ public function test_insufficient_wallet_balance_changes_nothing(): void
 
 ## Writing a test for a new feature
 
-Say you add "operators can't set a price above $10,000":
+Say you add "operators can't set a price above $10,000" (exercise 2, now
+implemented):
 
-1. Add the rule to `TourRequest` (`max:1000000`).
+1. `TourRequest` already had a looser `max` on `price_cents` ($100,000), so
+   the change is to lower it to `max:1000000` and give it a readable message.
 2. Add a test next to the others in `tests/Feature/Operator/TourManagementTest.php`:
 
 ```php
@@ -127,8 +129,11 @@ public function test_prices_above_ten_thousand_dollars_are_refused(): void
 }
 ```
 
-3. `make test-filter f=ten_thousand`. Watch it pass, then temporarily break
-   the rule and watch it fail. A test you have never seen fail proves nothing.
+3. Write the test *before* the change and run `make test-filter f=ten_thousand`.
+   It fails (201 instead of 422) because $10,000.01 was still allowed. Then
+   lower the limit and watch it pass. A test you have never seen fail proves
+   nothing. The real tests also check the exact boundary ($10,000 accepted),
+   updates, and that nothing was written to the database.
 
 ## Two testing gotchas met while building this project
 
