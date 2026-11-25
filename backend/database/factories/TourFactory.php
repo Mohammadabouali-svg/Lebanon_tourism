@@ -40,6 +40,15 @@ class TourFactory extends Factory
         return $this->state(['status' => TourStatus::Draft]);
     }
 
+    /** Archived by an admin and locked against operator status changes. */
+    public function moderated(): static
+    {
+        return $this->state([
+            'status' => TourStatus::Archived,
+            'moderated_at' => CarbonImmutable::now()->subDay(),
+        ]);
+    }
+
     /** A tour that started three days ago. */
     public function started(): static
     {

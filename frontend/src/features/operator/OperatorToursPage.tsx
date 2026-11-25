@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Link } from 'react-router'
 import { Alert } from '@/components/ui/Alert'
-import { StatusBadge } from '@/components/ui/Badge'
+import { Badge, StatusBadge } from '@/components/ui/Badge'
 import { Button, ButtonLink } from '@/components/ui/Button'
 import { ConfirmDialog } from '@/components/ui/Dialog'
 import { EmptyState } from '@/components/ui/EmptyState'
@@ -55,7 +55,12 @@ export function OperatorToursPage() {
                     <span className="block text-xs text-stone-500">{tour.city?.name} · {tour.category?.name}</span>
                   </Td>
                   <Td className="whitespace-nowrap">{formatDateRange(tour.starts_on, tour.ends_on)}</Td>
-                  <Td><StatusBadge status={tour.status} /></Td>
+                  <Td>
+                    <div className="flex flex-wrap items-center gap-1">
+                      <StatusBadge status={tour.status} />
+                      {tour.moderated_at && <Badge tone="red">Locked by admin</Badge>}
+                    </div>
+                  </Td>
                   <Td className="text-right">{formatMoney(tour.price_cents)}</Td>
                   <Td className="whitespace-nowrap text-right">{tour.booked_spots} / {tour.capacity}</Td>
                   <Td>

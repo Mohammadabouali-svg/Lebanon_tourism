@@ -9,6 +9,7 @@ use App\Models\Tour;
 use App\Models\User;
 use App\Notifications\OperatorApprovedNotification;
 use App\Notifications\ResetPasswordNotification;
+use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Notification;
@@ -124,6 +125,64 @@ class AdministrationTest extends TestCase
             ->assertJsonPath('data.status', 'archived');
 
         $this->getJson("/api/tours/{$tour->id}")->assertNotFound();
+    }
+
+    // --- Moderation lock (Exercise 6, D19) ------------------------------------
+
+    public function test_archiving_a_tour_locks_it_against_operator_changes(): void
+    {
+        $tour = Tour::factory()->create();
+
+        $this->actingAs($this->admin)
+            ->patchJson("/api/admin/tours/{$tour->id}/status", ['status' => 'archived'])
+            ->assertOk()
+            ->assertJsonPath('data.moderated_at', fn (?string $value) => $value !== null);
+
+        $this->assertNotNull($tour->fresh()->moderated_at);
+    }
+
+    public function test_publishing_an_archived_tour_removes_the_lock(): void
+    {
+        $tour = Tour::factory()->moderated()->create();
+
+        $this->actingAs($this->admin)
+            ->patchJson("/api/admin/tours/{$tour->id}/status", ['status' => 'published'])
+            ->assertOk()
+            ->assertJsonPath('data.status', 'published')
+            ->assertJsonPath('data.moderated_at', null);
+
+        $this->assertNull($tour->fresh()->moderated_at);
+    }
+
+    public function test_publishing_a_tour_does_not_lock_it(): void
+    {
+        $tour = Tour::factory()->draft()->create();
+
+        $this->actingAs($this->admin)
+            ->patchJson("/api/admin/tours/{$tour->id}/status", ['status' => 'published'])
+            ->assertOk();
+
+        $this->assertNull($tour->fresh()->moderated_at);
+    }
+
+    public function test_the_lock_is_shown_in_the_admin_tour_list(): void
+    {
+        $tour = Tour::factory()->moderated()->create();
+
+        $this->actingAs($this->admin)
+            ->getJson('/api/admin/tours')
+            ->assertOk()
+            ->assertJsonPath('data.0.moderated_at', $tour->moderated_at->toIso8601String());
+    }
+
+    public function test_the_database_refuses_a_moderated_tour_that_is_not_archived(): void
+    {
+        // Even code that bypasses TourService (tinker, a future import)
+        // cannot leave a locked tour published: tours_moderated_means_archived.
+        $tour = Tour::factory()->moderated()->create();
+
+        $this->expectException(QueryException::class);
+        DB::table('tours')->where('id', $tour->id)->update(['status' => 'published']);
     }
 
     public function test_dashboard_aggregates_confirmed_bookings(): void

@@ -55,6 +55,13 @@ will need to make the release logic public). Schedule it in
 admin archived. Add a `moderated_at` column; while it is set, the operator
 cannot change the status. Where does this rule belong: Form Request, policy
 or service? (Discuss the trade-offs before choosing.)
+*Implemented:* migration `2026_11_25_000100_add_moderated_at_to_tours` (with
+the `tours_moderated_means_archived` CHECK); an admin archive sets the lock and
+any other admin status clears it (`TourService::moderate()`); the operator's
+status change is refused in `TourService` with the code `tour_moderated`
+(the service option, D19). Tests in `TourManagementTest` and
+`AdministrationTest`. Write-up:
+[exercises/06-moderation-lock.md](exercises/06-moderation-lock.md).
 
 **7. Content-Security-Policy.** Add a strict `Content-Security-Policy` header
 in `docker/nginx/prod.conf` (`default-src 'self'; img-src 'self' data:; ...`).

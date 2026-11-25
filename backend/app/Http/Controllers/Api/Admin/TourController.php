@@ -6,6 +6,7 @@ use App\Enums\TourStatus;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\TourResource;
 use App\Models\Tour;
+use App\Services\TourService;
 use App\Support\Search;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
@@ -13,9 +14,14 @@ use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Validation\Rule;
 
-/** Content moderation: admins see every tour and can publish or archive it. */
+/*
+| Content moderation: admins see every tour and can publish or archive it.
+| Archiving also locks the status against the operator (TourService::moderate).
+*/
 class TourController extends Controller
 {
+    public function __construct(private readonly TourService $tours) {}
+
     public function index(Request $request): AnonymousResourceCollection
     {
         $filters = $request->validate([
@@ -41,8 +47,7 @@ class TourController extends Controller
 
         $data = $request->validate(['status' => ['required', Rule::enum(TourStatus::class)]]);
 
-        $tour->status = TourStatus::from($data['status']);
-        $tour->save();
+        $tour = $this->tours->moderate($tour, TourStatus::from($data['status']));
 
         return TourResource::make($tour->load(['city.region', 'category', 'operator.operatorProfile'])->loadCount('bookings'));
     }

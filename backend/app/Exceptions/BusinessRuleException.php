@@ -78,6 +78,15 @@ class BusinessRuleException extends RuntimeException implements ShouldntReport
         return new self('A tour with bookings cannot be deleted. Archive it instead.', 'tour_has_bookings');
     }
 
+    /** The operator tried to change the status of a tour an admin archived (D19). */
+    public static function tourModerated(): self
+    {
+        return new self(
+            'An administrator archived this tour, so its status cannot be changed. You can still edit the other fields.',
+            'tour_moderated',
+        );
+    }
+
     /** E.g. deleting a city that tours still point to. */
     public static function stillInUse(string $thing, string $advice = ''): self
     {

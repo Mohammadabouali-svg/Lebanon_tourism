@@ -19,6 +19,8 @@ use Illuminate\Support\Facades\Storage;
 |   operator_id  - always the logged-in operator, set by the controller
 |   booked_spots - only BookingService changes it, inside a transaction
 |   image_path   - set after the uploaded file was processed
+|   moderated_at - the admin moderation lock, only TourService::moderate()
+|                  sets or clears it (docs/decisions.md D19)
 */
 #[Fillable([
     'title', 'description', 'meeting_point', 'city_id', 'category_id', 'price_cents',
@@ -38,6 +40,7 @@ class Tour extends Model
         'status' => 'draft',
         'image_path' => null,
         'meeting_point' => null,
+        'moderated_at' => null,
     ];
 
     protected function casts(): array
@@ -50,6 +53,7 @@ class Tour extends Model
             'capacity' => 'integer',
             'booked_spots' => 'integer',
             'duration_days' => 'integer',
+            'moderated_at' => 'immutable_datetime',
         ];
     }
 

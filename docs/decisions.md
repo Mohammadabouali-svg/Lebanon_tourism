@@ -176,7 +176,7 @@ To keep the project teachable, some things are listed as exercises instead of
 being built: e-mail address change with re-verification, cleanup of stale
 `pending` card bookings (since built in Exercise 5, see D18), a real Stripe
 driver, recurring departures, full-text search, admin "lock" on moderated
-tours. See [10-exercises.md](10-exercises.md).
+tours (since built in Exercise 6, see D19). See [10-exercises.md](10-exercises.md).
 
 ## D17. The tour price cap is validation only, not a database constraint
 
@@ -256,3 +256,61 @@ Crediting the wallet on every expiry (free money when the card was never
 charged). An e-mail to the traveler (in the crash case we cannot say whether
 they paid). Running every five minutes (spots held up to 20 minutes for no
 real saving).
+
+## D19. The admin moderation lock is a service rule, not a policy or Form Request
+
+**Context.** An operator could re-publish a tour an admin had archived.
+Exercise 6 adds `moderated_at`: while it is set, the operator cannot change
+the tour's status. The exercise asks where that rule belongs: Form Request,
+policy or service. Two facts shape the answer. Every operator save sends a
+`status` (`TourRequest` requires it), so the rule must compare the requested
+status with the stored one. And the operator remains the tour's owner, who
+may still fix its other fields.
+
+**Decision.**
+- The rule lives in **`TourService`**. `save()` already locks the tour row to
+  check `booked_spots`; it now reads `status` and `moderated_at` from the
+  locked row too, and throws `BusinessRuleException::tourModerated()` (422,
+  code `tour_moderated`) when a locked tour's status would change. Sending the
+  current status again is allowed, and so are edits to all other fields.
+- The admin side moves into **`TourService::moderate()`**: one transaction,
+  the same row lock, `forceFill` for the non-fillable `moderated_at`.
+  Archiving sets the lock (keeping the original time if it was already set);
+  any other status reinstates the tour and clears it. There is no separate
+  unlock endpoint, and an admin publishing does not lock.
+- A **`CHECK (moderated_at IS NULL OR status = 'archived')`**
+  (`tours_moderated_means_archived`) states what the lock means.
+- `TourResource` exposes `moderated_at`; the operator's form disables the
+  status select and shows the reason.
+
+**Why.** A **Form Request** would read the stored tour *before* the
+transaction. An admin archiving between validation and save would then not be
+seen (a time-of-check/time-of-use race). It would also put a business rule
+into the validation layer (§5). A **policy** answers "may this user act on this
+record?". The honest answer here is yes: the operator may edit their tour.
+Refusing `update()` would block every edit of a locked tour. A separate
+`changeStatus` ability would need the controller to compare the input with the
+stored status, which is business logic outside the service. Either way the
+answer would be a 403 "This action is unauthorized", which misleads the
+operator. In the **service** the check runs under the row lock, so admin and
+operator requests on the same tour are serialised (invariant 13). The error
+has a stable code (invariant 22) that the form maps to the status field. Any
+future caller (an import, a command) gets the rule for free. All three options
+run on the server, so none of them can be got round with curl; the
+differences are the race, the meaning of the error and the layer.
+The CHECK is integrity, not a tunable limit like D17's price cap: a locked
+*and* published tour would be contradictory data.
+
+**Consequences.** Every published tour has `moderated_at` NULL, so the
+field can be shown publicly without revealing anything. An admin who wants to
+lift the lock but leave the tour hidden sets it to `draft`. An operator may
+still delete a locked tour that has no bookings (unchanged; a possible
+follow-up). If moderation ever needs a lock on non-archived tours (e.g. "locked
+as published"), the CHECK must be replaced in a new migration.
+
+**Rejected.** A Form Request `after()` rule (race, wrong layer). A
+`TourPolicy` ability (403 with the wrong meaning, blocks other edits, input
+logic in a policy). Locking on every admin status change plus an unlock
+endpoint (a new route and button for a case the exercise does not need). A
+lock independent of the status (most flexible, most to build, and no
+constraint could state its meaning).

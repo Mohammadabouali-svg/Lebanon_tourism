@@ -1,6 +1,6 @@
 import { Link } from 'react-router'
 import { Alert } from '@/components/ui/Alert'
-import { StatusBadge } from '@/components/ui/Badge'
+import { Badge, StatusBadge } from '@/components/ui/Badge'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { Select } from '@/components/ui/Field'
 import { PageHeader } from '@/components/ui/PageHeader'
@@ -9,7 +9,7 @@ import { PageSpinner } from '@/components/ui/Spinner'
 import { TBody, THead, Table, Td, Th, Tr } from '@/components/ui/Table'
 import { useQueryFilters } from '@/hooks/useQueryFilters'
 import { parseApiError } from '@/lib/api'
-import { formatDateRange } from '@/lib/dates'
+import { formatDateRange, formatDateTime } from '@/lib/dates'
 import { formatMoney } from '@/lib/money'
 import type { TourStatus } from '@/lib/types'
 import { SearchInput } from './SearchInput'
@@ -78,6 +78,11 @@ export function AdminToursPage() {
                         <option value="published">Published</option>
                         <option value="archived">Archived</option>
                       </Select>
+                      {tour.moderated_at && (
+                        <Badge tone="red">
+                          Locked<span className="sr-only"> since {formatDateTime(tour.moderated_at)}</span>
+                        </Badge>
+                      )}
                     </div>
                   </Td>
                 </Tr>

@@ -10,7 +10,7 @@ import { useReferenceData } from '@/features/tours/queries'
 import { useFilePreview } from '@/hooks/useFilePreview'
 import { useFormFields } from '@/hooks/useFormFields'
 import { isStatus, parseApiError, type FieldErrors } from '@/lib/api'
-import { todayIso } from '@/lib/dates'
+import { formatDateTime, todayIso } from '@/lib/dates'
 import { centsToDollarInput, parseDollarsToCents } from '@/lib/money'
 import type { ReferenceData, Tour, TourStatus } from '@/lib/types'
 import { NotFoundPage } from '@/pages/NotFoundPage'
@@ -70,7 +70,11 @@ function TourForm({ tour, reference }: { tour: Tour | null; reference: Reference
   const [priceError, setPriceError] = useState<string>()
 
   const error = save.error ? parseApiError(save.error) : null
-  const errors: FieldErrors = error?.fieldErrors ?? {}
+  // `tour_moderated` is a business rule (422 + code), not a field error, but
+  // it is about the status, so it is shown under the status select.
+  const errors: FieldErrors = error?.code === 'tour_moderated' ? { status: error.message } : (error?.fieldErrors ?? {})
+  // UX only: the server refuses the status change anyway (TourService).
+  const locked = tour?.moderated_at != null
 
   const cities = reference.regions.find((region) => String(region.id) === values.region_id)?.cities ?? []
 
@@ -146,7 +150,12 @@ function TourForm({ tour, reference }: { tour: Tour | null; reference: Reference
               label="Status"
               {...field('status')}
               error={errors.status}
-              hint="Only published tours are visible and bookable. Archive a tour to hide it while keeping its bookings."
+              disabled={locked}
+              hint={
+                locked
+                  ? `Archived by an administrator on ${formatDateTime(tour?.moderated_at ?? null)}. You can still edit the other fields; contact the platform to have the tour reinstated.`
+                  : 'Only published tours are visible and bookable. Archive a tour to hide it while keeping its bookings.'
+              }
             >
               <option value="draft">Draft</option>
               <option value="published">Published</option>

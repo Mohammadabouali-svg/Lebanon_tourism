@@ -115,6 +115,16 @@ Scoped queries        $request->user()->tours() → only their records exist
 3. **Scoped queries**: lists start from the user's relation, so other
    people's records never even come out of the database.
 
+**Not every "you can't do that" is a policy.** A policy answers "may this
+user act on this record at all?" and its answer is a 403. A rule that depends
+on *what* the request asks for and on the record's current state is a
+business rule. Example: the admin moderation lock (Exercise 6). The
+operator still owns the tour and may edit it (the policy says yes), but
+while an admin's archive locks it they may not change its *status*.
+`TourService` checks that under a row lock and answers 422 with the code
+`tour_moderated`. See [decisions.md D19](decisions.md) for why it is not a
+policy or a Form Request rule.
+
 The frontend also hides buttons the user may not use, but that is only for
 convenience. **Every rule is enforced by the API**, because anyone can send
 requests without our frontend (curl, Postman, the browser console).

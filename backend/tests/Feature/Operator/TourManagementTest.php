@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Operator;
 
+use App\Enums\TourStatus;
 use App\Models\Booking;
 use App\Models\Category;
 use App\Models\City;
@@ -184,6 +185,62 @@ class TourManagementTest extends TestCase
             ->assertJsonPath('code', 'capacity_below_bookings');
 
         $this->assertSame(10, $tour->fresh()->capacity);
+    }
+
+    // --- Admin moderation lock (Exercise 6, D19) ------------------------------
+
+    public function test_an_operator_cannot_republish_a_tour_an_admin_archived(): void
+    {
+        $tour = Tour::factory()->for($this->operator, 'operator')->moderated()->create(['title' => 'Old title']);
+        $lockedAt = $tour->moderated_at;
+
+        $this->actingAs($this->operator)
+            ->putJson("/api/operator/tours/{$tour->id}", $this->validPayload(['status' => 'published']))
+            ->assertUnprocessable()
+            ->assertJsonPath('code', 'tour_moderated');
+
+        // Nothing of the save went through, not only the status.
+        $tour = $tour->fresh();
+        $this->assertSame(TourStatus::Archived, $tour->status);
+        $this->assertSame('Old title', $tour->title);
+        $this->assertTrue($lockedAt->equalTo($tour->moderated_at));
+    }
+
+    public function test_an_operator_can_edit_a_moderated_tour_without_changing_its_status(): void
+    {
+        // The form always sends a status (TourRequest requires it), so a save
+        // that keeps the current status must still work on a locked tour.
+        $tour = Tour::factory()->for($this->operator, 'operator')->moderated()->create();
+
+        $this->actingAs($this->operator)
+            ->putJson("/api/operator/tours/{$tour->id}", $this->validPayload(['status' => 'archived', 'title' => 'Fixed title']))
+            ->assertOk()
+            ->assertJsonPath('data.title', 'Fixed title')
+            ->assertJsonPath('data.status', 'archived');
+
+        $this->assertNotNull($tour->fresh()->moderated_at);
+    }
+
+    public function test_an_operator_can_republish_a_tour_they_archived_themselves(): void
+    {
+        $tour = Tour::factory()->for($this->operator, 'operator')->create(['status' => TourStatus::Archived]);
+
+        $this->actingAs($this->operator)
+            ->putJson("/api/operator/tours/{$tour->id}", $this->validPayload(['status' => 'published']))
+            ->assertOk()
+            ->assertJsonPath('data.status', 'published');
+
+        $this->assertSame(TourStatus::Published, $tour->fresh()->status);
+    }
+
+    public function test_the_operator_sees_the_lock_on_their_tour(): void
+    {
+        $tour = Tour::factory()->for($this->operator, 'operator')->moderated()->create();
+
+        $this->actingAs($this->operator)
+            ->getJson("/api/operator/tours/{$tour->id}")
+            ->assertOk()
+            ->assertJsonPath('data.moderated_at', $tour->moderated_at->toIso8601String());
     }
 
     public function test_a_tour_with_bookings_cannot_be_deleted(): void

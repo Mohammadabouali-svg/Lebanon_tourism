@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Enums\TourStatus;
 use App\Exceptions\BusinessRuleException;
 use App\Models\Tour;
 use App\Models\User;
@@ -12,7 +13,8 @@ use Illuminate\Support\Facades\DB;
 use Throwable;
 
 /*
-| Creating and updating tours (operator area).
+| Creating and updating tours (operator area), and the admin's moderation
+| of them (moderate(), with the lock that save() enforces).
 |
 | A tour and its itinerary are saved together in one transaction: a tour
 | without its itinerary (or with half of it) can never be observed.
@@ -42,6 +44,33 @@ final class TourService
         return $this->save($tour, $data, $image);
     }
 
+    /**
+     * An admin changes a tour's status (content moderation).
+     *
+     * Archiving locks the tour: `moderated_at` is set and the operator can no
+     * longer change the status (see save()). Any other status the admin picks
+     * reinstates the tour and removes the lock. This lives here, next to the
+     * operator's side of the rule, rather than in a policy or Form Request:
+     * see docs/decisions.md D19.
+     */
+    public function moderate(Tour $tour, TourStatus $status): Tour
+    {
+        DB::transaction(function () use ($tour, $status) {
+            // Same row lock as save(): an operator save and an admin decision
+            // on the same tour run one after the other, never interleaved.
+            $current = Tour::query()->whereKey($tour->getKey())->lockForUpdate()->firstOrFail(['moderated_at']);
+
+            // forceFill: moderated_at is deliberately not fillable (invariant 9).
+            $tour->forceFill([
+                'status' => $status,
+                // Re-archiving a locked tour keeps the original lock time.
+                'moderated_at' => $status === TourStatus::Archived ? ($current->moderated_at ?? now()) : null,
+            ])->save();
+        });
+
+        return $tour;
+    }
+
     /** @throws BusinessRuleException when the tour has bookings */
     public function delete(Tour $tour): void
     {
@@ -62,11 +91,21 @@ final class TourService
         try {
             DB::transaction(function () use ($tour, $data, $newImagePath) {
                 if ($tour->exists) {
-                    // Lock so that no booking slips in between this check and the save.
-                    $bookedSpots = Tour::query()->whereKey($tour->getKey())->lockForUpdate()->value('booked_spots');
+                    // Lock so that no booking (and no admin moderation) slips in
+                    // between these checks and the save. The values checked are
+                    // read from the locked row, not from $tour, which was loaded
+                    // before the lock and may be stale.
+                    $current = Tour::query()->whereKey($tour->getKey())->lockForUpdate()
+                        ->firstOrFail(['booked_spots', 'status', 'moderated_at']);
 
-                    if ($data['capacity'] < $bookedSpots) {
-                        throw BusinessRuleException::capacityBelowBookings($bookedSpots);
+                    if ($data['capacity'] < $current->booked_spots) {
+                        throw BusinessRuleException::capacityBelowBookings($current->booked_spots);
+                    }
+
+                    // The admin moderation lock (D19). Sending the current status
+                    // again is allowed: the edit form always sends one.
+                    if ($current->moderated_at !== null && TourStatus::from($data['status']) !== $current->status) {
+                        throw BusinessRuleException::tourModerated();
                     }
                 }
 

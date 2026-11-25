@@ -31,6 +31,10 @@ class TourResource extends JsonResource
             'is_bookable' => $this->status === TourStatus::Published
                 && ! $this->hasStarted()
                 && $this->available_spots > 0,
+            // The admin moderation lock (D19). Safe to show publicly: the
+            // tours_moderated_means_archived CHECK keeps it null on every
+            // published tour, so only operators and admins ever see a value.
+            'moderated_at' => $this->moderated_at?->toIso8601String(),
             'image_url' => $this->image_url,
 
             'city' => CityResource::make($this->whenLoaded('city')),

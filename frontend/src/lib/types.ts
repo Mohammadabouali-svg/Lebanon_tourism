@@ -80,6 +80,8 @@ export interface Tour {
   duration_days: number
   status: TourStatus
   is_bookable: boolean
+  /** Set while an admin's archive locks the status (D19); always null for published tours. */
+  moderated_at: string | null
   image_url: string | null
   city?: City
   category?: Category
