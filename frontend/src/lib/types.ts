@@ -121,11 +121,17 @@ export interface Booking {
   traveler?: Traveler
 }
 
+export interface ReviewPhoto {
+  id: number
+  url: string
+}
+
 export interface Review {
   id: number
   rating: number
   comment: string
-  photo_url: string | null
+  /** Up to three, in upload order. */
+  photos: ReviewPhoto[]
   author_name?: string
   can_delete: boolean
   created_at: string | null

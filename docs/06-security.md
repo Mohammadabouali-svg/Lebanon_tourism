@@ -53,8 +53,12 @@ including `role` or `suspended_at`. Two defences:
 
 Each layer catches what the previous one might miss:
 
-1. **PHP limits**: `upload_max_filesize` / `post_max_size` (docker/php/conf.d).
-2. **Validation**: `image|mimes:jpg,jpeg,png,webp|max:5120`. Laravel checks
+1. **Size limits**: `upload_max_filesize` (8 MB per file) / `post_max_size`
+   (20 MB per request) in docker/php/conf.d, and nginx `client_max_body_size
+   20m`: a review may carry three 5 MB photos (D21). Larger requests get a 413.
+2. **Validation**: `image|mimes:jpg,jpeg,png,webp|max:5120`, per file
+   (`photos.*`), and at most three review photos (`photos` `array|max:3`,
+   backed by a database CHECK). Laravel checks
    the MIME type from the file *content* (libmagic), not the name. SVG is not
    allowed: it is XML that can contain JavaScript.
 3. **Re-encoding**: GD decodes the pixels and writes a brand-new WebP. Hidden
@@ -62,6 +66,10 @@ Each layer catches what the previous one might miss:
 4. **Naming**: a random UUID plus an extension we choose.
 5. **Serving**: nginx serves `/storage/*` as static files with
    `X-Content-Type-Options: nosniff`. Only `index.php` is ever executed.
+6. **Cleanup**: files are not in database transactions. `TourService` and
+   `ReviewService` delete a file they just wrote when the request fails
+   later (e.g. review photo 2 of 3 is not a real image), and delete old
+   files only after the database committed.
 
 ## Secrets and configuration
 

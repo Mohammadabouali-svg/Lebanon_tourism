@@ -269,7 +269,9 @@ form, so card data never touches our code or servers.
 - **Uploads.** Review photos and tour images are sent as `FormData`
   (multipart). PHP only parses multipart bodies on POST, so updates send
   `POST` with `_method=PUT` (Laravel's "method spoofing").
-  `hooks/useFilePreview.ts` shows a preview and frees its memory afterwards.
+  `hooks/useFilePreview.ts` shows a preview and frees its memory afterwards;
+  `hooks/useFilePreviews.ts` does the same for the up to three review photos
+  (sent as `photos[]`, shown as a gallery with "Photo 2 of 3 by …" alt text).
 - **No `dangerouslySetInnerHTML`.** All text from users (tour descriptions,
   reviews, names) is rendered as text, which React escapes. Line breaks are
   kept with the CSS class `whitespace-pre-line`, not by injecting `<br>`.

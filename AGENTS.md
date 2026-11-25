@@ -104,7 +104,7 @@ second origin or CORS config.
 | `app/Http/Controllers/Api/{,Auth,Operator,Admin}/` | Thin HTTP layer, one folder per audience |
 | `app/Http/Resources/` | Output shaping. Models are never returned directly. |
 | `app/Policies/` | Record-level authorization (`TourPolicy`, `BookingPolicy`, `ReviewPolicy`) |
-| `app/Services/` | Business rules: `BookingService`, `PricingService` (+ `Quote`), `WalletService`, `TourService` |
+| `app/Services/` | Business rules: `BookingService`, `PricingService` (+ `Quote`), `WalletService`, `TourService`, `ReviewService` (review + photo files) |
 | `app/Payments/` | `PaymentGateway` interface, `ChargeResult`, `FakePaymentGateway` (approves in dev, declines in prod) |
 | `app/Queries/` | Reporting queries (`BookingStats`) — aggregate in SQL |
 | `app/Exports/`, `app/Support/CsvExport.php` | CSV with formula-injection protection |
@@ -408,7 +408,7 @@ browser redirect → card data never touches our server.
 
 | Need | Read |
 |---|---|
-| Why a choice was made | `docs/decisions.md` (D1–D20) |
+| Why a choice was made | `docs/decisions.md` (D1–D21) |
 | Setup / troubleshooting | `docs/01-getting-started.md` |
 | Request path, folder map | `docs/02-architecture.md` |
 | Sessions, CSRF, roles, policies | `docs/03-authentication.md` |
@@ -436,7 +436,7 @@ that #5 and #9 depend on). Update the status column as work lands.
 | 5 | Expire stale pending bookings | Artisan command, 15 min; `BookingService::releaseSpots()` is private today, so expose a deliberate public method; schedule in `routes/console.php` (scheduler runs only in prod compose: test the command directly); `travel()` | done: verified 2026-11-25 (`bookings:expire-pending` every minute, `expireStalePending()` locks + re-checks, `markPaid()` refuses expired bookings and credits the wallet, D18; 102 tests, pint, build, lint, manual check OK) |
 | 6 | Admin moderation lock | `moderated_at` (timestampTz, not fillable) + CHECK `tours_moderated_means_archived`; admin archive locks, other admin status unlocks (`TourService::moderate()`); operator status change refused in `TourService::save()` under the row lock, 422 `tour_moderated` (service, not policy/Form Request: D19); 9 tests in `TourManagementTest` / `AdministrationTest` | done: verified 2026-11-25 (111 tests, pint, build, lint, manual check admin + operator OK) |
 | 4 | Change e-mail | `pending_email` (not fillable, CHECK `users_pending_email_differs`, no unique index); `POST`/`DELETE user/email-change` (current password, `throttle:6,1`); signed `POST email/change/{id}/{hash}` (hash of pending address, 60 min, no login); `EmailChangeService::confirm()` locks, re-checks free (`email_taken`), swaps, verifies, deletes old reset tokens, notifies old address after commit (D20); 23 tests in `EmailChangeTest` / `AccessControlTest` | done: verified 2026-11-25 (134 tests, pint, build, lint, manual check traveler2 OK) |
-| 8 | Review photos | `review_photos` table, max 3, `photos.*`, delete files with review | todo |
+| 8 | Review photos | `review_photos` (FK cascade, CHECK `review_photos_position_range` 1..3 + unique `(review_id, position)`); `photo_path` copied as position 1 then dropped (`2026_11_25_000300`/`000400`, `down()` restores position 1); `photo_url` → `photos: [{id, url}]`, request `photos[]` (`max:3`, 5 MB each); request limit 20 MB (`app.ini`, nginx dev + prod); `ReviewService` stores files first, deletes them on any failure, deletes files after commit on review delete (D21); 26 tests in `ReviewTest` | done: verified 2026-11-25 (160 tests, pint, build, lint, manual check traveler 3 photos + 4th refused + delete OK) |
 | 7 | CSP header | `docker/nginx/prod.conf`; check console in prod stack | todo |
 | 12 | Audit log | `audit_events` for admin actions + admin page | todo |
 | 11 | Faster search | `pg_trgm` GIN or `tsvector`; `EXPLAIN ANALYZE` on 100k tours | todo |
@@ -530,6 +530,11 @@ the machine you are on: they are fallbacks, not requirements.
   they don't catch this. Seen in Exercise 4: a queued e-mail failed with
   "Route [...] not defined" until the worker was restarted; then
   `php artisan queue:retry all`.
+- **PHP settings are baked into the image.** `docker/php/conf.d/*.ini` is
+  `COPY`ed by the Dockerfile, so after changing it run
+  `docker compose build php queue` then `docker compose up -d php queue`; a
+  restart keeps the old values. nginx configs are bind-mounted: a
+  `docker compose restart nginx` is enough. Seen in Exercise 8.
 - **Never run two test runs at once**: they share `lebanon_tourism_test`, and
   `RefreshDatabase` makes them clash. Tests added while a run is in progress
   may be picked up by it.

@@ -26,7 +26,7 @@ backend/tests/
     ├── Operator/                tour management, CSV export
     ├── Admin/                   wallet credits, suspensions, approvals, moderation
     ├── AccessControlTest.php    who may call what
-    ├── ReviewTest.php           review rules and uploads
+    ├── ReviewTest.php           review rules, photo uploads and cleanup, photo migration
     └── TourCatalogTest.php      public listing, filters, search
 ```
 

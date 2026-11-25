@@ -16,6 +16,7 @@ erDiagram
     tours ||--o{ itinerary_items : "day by day"
     tours ||--o{ bookings : receives
     tours ||--o{ reviews : receives
+    reviews ||--o{ review_photos : "up to 3"
     discounts ||--o{ bookings : "applied to"
 ```
 
@@ -48,6 +49,7 @@ else: bugs, race conditions, a script someone runs by hand next year.
 | `bookings_totals_consistent` | `subtotal = unit price × spots` and `total = subtotal − discount` |
 | `bookings_one_discount_per_user` (partial unique index) | a code is used once per traveler; cancelled bookings don't count |
 | `reviews (tour_id, user_id)` unique | one review per traveler and tour |
+| `review_photos_position_range` (`position BETWEEN 1 AND 3`) + `review_photos (review_id, position)` unique | at most three photos per review, each in its own slot (Exercise 8, D21). Photo rows cascade with their review; the *files* are deleted by `ReviewService` after the commit, since the database cannot touch the disk |
 | `cities (region_id, name)` unique | no duplicate city within a region |
 | `*_status_valid`, `users_role_valid` | only known statuses and roles |
 | `restrictOnDelete` foreign keys | a city with tours, a user with bookings... cannot be deleted |

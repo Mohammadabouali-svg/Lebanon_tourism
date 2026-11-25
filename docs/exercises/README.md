@@ -12,6 +12,7 @@ the tests that prove it, and how it was verified.
 | 4 | Change e-mail address | [04-change-email.md](04-change-email.md) |
 | 5 | Expire stale pending bookings | [05-expire-pending-bookings.md](05-expire-pending-bookings.md) |
 | 6 | Admin moderation lock | [06-moderation-lock.md](06-moderation-lock.md) |
+| 8 | Review photos gallery | [08-review-photos.md](08-review-photos.md) |
 
 When an exercise is finished, add its write-up here with the same sections:
 **What was asked**, **Decisions**, **What was done**, **Tests**,

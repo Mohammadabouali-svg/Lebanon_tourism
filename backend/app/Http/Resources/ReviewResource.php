@@ -3,6 +3,7 @@
 namespace App\Http\Resources;
 
 use App\Models\Review;
+use App\Models\ReviewPhoto;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 use Illuminate\Support\Str;
@@ -17,7 +18,12 @@ class ReviewResource extends JsonResource
             'id' => $this->id,
             'rating' => $this->rating,
             'comment' => $this->comment,
-            'photo_url' => $this->photo_url,
+            // In upload order (the relation sorts by position). Only id and
+            // url: the storage path stays a server detail.
+            'photos' => $this->whenLoaded('photos', fn () => $this->photos->map(fn (ReviewPhoto $photo) => [
+                'id' => $photo->id,
+                'url' => $photo->url,
+            ])->all()),
             // Public pages show "Maya K." rather than a full name.
             'author_name' => $this->whenLoaded('user', fn () => $this->shortName($this->user->name)),
             'can_delete' => (bool) $request->user()?->can('delete', $this->resource),

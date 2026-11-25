@@ -73,7 +73,7 @@ export function useTourReviews(tourId: number, page: number) {
 export function useCreateReview(tourId: number) {
   const queryClient = useQueryClient()
   return useMutation({
-    // FormData, because the review may include a photo. Axios sets the
+    // FormData, because the review may include photos (`photos[]`). Axios sets the
     // multipart Content-Type (with its boundary) automatically.
     mutationFn: async (form: FormData) => (await api.post<Envelope<Review>>(`/tours/${tourId}/reviews`, form)).data.data,
     onSuccess: () => {

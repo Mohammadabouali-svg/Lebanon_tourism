@@ -7,7 +7,7 @@ import { Field, TextareaField } from '@/components/ui/Field'
 import { Pagination } from '@/components/ui/Pagination'
 import { Spinner } from '@/components/ui/Spinner'
 import { useCurrentUser } from '@/features/auth/hooks'
-import { useFilePreview } from '@/hooks/useFilePreview'
+import { useFilePreviews } from '@/hooks/useFilePreviews'
 import { parseApiError } from '@/lib/api'
 import { formatDateTime } from '@/lib/dates'
 import type { Review } from '@/lib/types'
@@ -61,9 +61,7 @@ function ReviewItem({ review, tourId }: { review: Review; tourId: number }) {
         <span className="text-xs text-stone-500">{formatDateTime(review.created_at)}</span>
       </div>
       <p className="mt-2 whitespace-pre-line text-sm text-stone-700">{review.comment}</p>
-      {review.photo_url && (
-        <img src={review.photo_url} alt={`Photo by ${review.author_name ?? 'a traveler'}`} loading="lazy" className="mt-3 max-h-64 rounded-lg object-cover" />
-      )}
+      {review.photos.length > 0 && <ReviewGallery review={review} />}
       {/* `can_delete` is computed by ReviewPolicy on the server for the current user. */}
       {review.can_delete && (
         <div className="mt-3">
@@ -73,7 +71,7 @@ function ReviewItem({ review, tourId }: { review: Review; tourId: number }) {
           <ConfirmDialog
             open={confirming}
             title="Delete this review?"
-            description="The review and its photo are removed permanently."
+            description="The review and its photos are removed permanently."
             confirmLabel="Delete"
             loading={remove.isPending}
             error={remove.isError && <Alert tone="error">{parseApiError(remove.error).message}</Alert>}
@@ -86,25 +84,55 @@ function ReviewItem({ review, tourId }: { review: Review; tourId: number }) {
   )
 }
 
+/* Up to three thumbnails; each opens the full photo in a new tab. */
+function ReviewGallery({ review }: { review: Review }) {
+  const author = review.author_name ?? 'a traveler'
+
+  return (
+    <ul className="mt-3 flex flex-wrap gap-2" aria-label={`Photos by ${author}`}>
+      {review.photos.map((photo, index) => (
+        <li key={photo.id}>
+          <a href={photo.url} target="_blank" rel="noopener noreferrer" className="block rounded-lg focus-visible:outline-2 focus-visible:outline-offset-2">
+            <img
+              src={photo.url}
+              alt={`Photo ${index + 1} of ${review.photos.length} by ${author}`}
+              loading="lazy"
+              className="size-32 rounded-lg object-cover sm:size-40"
+            />
+          </a>
+        </li>
+      ))}
+    </ul>
+  )
+}
+
+/* The server's limit (StoreReviewRequest). Repeated here only to guide the user. */
+const MAX_PHOTOS = 3
+
 function ReviewForm({ tourId, onCreated }: { tourId: number; onCreated: () => void }) {
   const [rating, setRating] = useState(0)
   const [comment, setComment] = useState('')
-  const { file: photo, previewUrl: preview, setFile: setPhoto } = useFilePreview()
+  const [leftOut, setLeftOut] = useState(0)
+  const photos = useFilePreviews(MAX_PHOTOS)
   const create = useCreateReview(tourId)
   const error = create.error ? parseApiError(create.error) : null
+  // Laravel reports the array itself (`photos`, e.g. too many) or one file (`photos.1`).
+  const photoError =
+    error?.fieldErrors.photos ?? Object.entries(error?.fieldErrors ?? {}).find(([field]) => field.startsWith('photos.'))?.[1]
 
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     const form = new FormData()
     form.append('rating', String(rating))
     form.append('comment', comment)
-    if (photo) form.append('photo', photo)
+    photos.files.forEach((photo) => form.append('photos[]', photo))
 
     create.mutate(form, {
       onSuccess: () => {
         setRating(0)
         setComment('')
-        setPhoto(null)
+        setLeftOut(0)
+        photos.clear()
         onCreated()
       },
     })
@@ -130,19 +158,48 @@ function ReviewForm({ tourId, onCreated }: { tourId: number; onCreated: () => vo
         hint="At least 10 characters."
         error={error?.fieldErrors.comment}
       />
-      <Field label="Photo (optional, JPG/PNG/WebP up to 5 MB)" error={error?.fieldErrors.photo}>
+      <Field
+        label={`Photos (optional, up to ${MAX_PHOTOS}, JPG/PNG/WebP up to 5 MB each)`}
+        hint={leftOut > 0 ? `Only ${MAX_PHOTOS} photos can be added; ${leftOut} left out.` : undefined}
+        error={photoError}
+      >
         {({ id, describedBy }) => (
           <input
             id={id}
             type="file"
+            multiple
             accept="image/jpeg,image/png,image/webp"
             aria-describedby={describedBy}
-            onChange={(event) => setPhoto(event.target.files?.[0] ?? null)}
-            className="block w-full text-sm text-stone-600 file:mr-3 file:rounded-lg file:border-0 file:bg-stone-100 file:px-3 file:py-2 file:text-sm file:font-medium"
+            disabled={photos.previews.length >= MAX_PHOTOS}
+            onChange={(event) => {
+              if (event.target.files) setLeftOut(photos.add(event.target.files))
+              // Cleared so that choosing the same file again fires onChange.
+              event.target.value = ''
+            }}
+            className="block w-full text-sm text-stone-600 file:mr-3 file:rounded-lg file:border-0 file:bg-stone-100 file:px-3 file:py-2 file:text-sm file:font-medium disabled:opacity-50"
           />
         )}
       </Field>
-      {preview && <img src={preview} alt="Selected photo preview" className="max-h-40 rounded-lg" />}
+      {photos.previews.length > 0 && (
+        <ul className="flex flex-wrap gap-3" aria-label="Selected photos">
+          {photos.previews.map((preview, index) => (
+            <li key={preview.url} className="space-y-1">
+              <img src={preview.url} alt={`Selected photo ${index + 1}: ${preview.file.name}`} className="size-28 rounded-lg object-cover" />
+              <Button
+                variant="ghost"
+                size="sm"
+                aria-label={`Remove photo ${index + 1}`}
+                onClick={() => {
+                  photos.remove(index)
+                  setLeftOut(0)
+                }}
+              >
+                Remove
+              </Button>
+            </li>
+          ))}
+        </ul>
+      )}
       <Button type="submit" loading={create.isPending}>
         Publish review
       </Button>

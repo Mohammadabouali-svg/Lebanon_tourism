@@ -377,3 +377,61 @@ sessions at the swap (would log out the real owner as easily as an attacker,
 and the password did not change). Removing `email` from `#[Fillable]` (sign-up
 and admin creation set it legitimately; it would touch code outside this
 exercise. A possible separate clean-up).
+
+## D21. Review photos: a capped child table, cleaned up by the service after commit
+
+**Context.** Exercise 8 allows up to three photos per review. Reviews already
+had one optional photo in `reviews.photo_path`, written by the controller.
+Files are not part of database transactions, and three 5 MB photos did not fit
+in the 10 MB request limit (PHP `post_max_size`, nginx `client_max_body_size`).
+
+**Decision.**
+- **A `review_photos` child table** (`review_id`, `position`, `path`), FK
+  `ON DELETE CASCADE` (photos are owned by their review). "At most three" is a
+  database fact without a trigger: CHECK `review_photos_position_range`
+  (`position BETWEEN 1 AND 3`) plus a unique index on `(review_id, position)`.
+- **`photo_path` is migrated and dropped** in a separate migration
+  (`INSERT ... SELECT` as position 1, then `DROP COLUMN`). `down()` copies
+  position 1 back; photos 2 and 3 are lost on rollback (files stay on disk).
+- **API:** `photo_url` is replaced by `photos: [{id, url}]` (upload order); the
+  request field `photo` is replaced by `photos[]` (`array|max:3`, each
+  `image|mimes:jpg,jpeg,png,webp|max:5120`). No transition period: the React
+  app is the only client and ships with the API.
+- **Size:** 5 MB per photo is kept; the request limit is raised to 20 MB
+  (`post_max_size = 20M`, `client_max_body_size 20m` in dev and prod).
+- **`ReviewService`** (`create`, `delete`) owns the file handling: photos are
+  stored first (outside any transaction), the review and its photo rows are
+  inserted in one transaction, and on *any* failure (a photo that GD cannot
+  decode, the unique index refusing a duplicate review) every file already
+  written is deleted again. On delete, the paths are read, the review is
+  deleted (rows cascade), and the files are deleted **after the commit**.
+
+**Why.** A child table makes "how many" and "in what order" plain data, and
+the CHECK + unique index enforces the cap even under a race or a future code
+path that forgets validation, at almost no cost (unlike D17's price cap, the
+limit is part of the storage shape, not a business number that may change).
+Keeping one source of truth avoids every reader having to merge two places.
+Phone photos are often 3-6 MB, so lowering the per-photo limit would have
+refused ordinary uploads; the bigger body is bounded by `throttle:uploads`
+(10/min) and the verified-traveler route group, and ImageUploader shrinks
+every photo to 1600 px. The service follows `TourService::save()`: the
+controller stays thin, and the cleanup sits next to the code that created the
+files.
+
+**Consequences.** The database cascades (review → photos, and tour/user →
+reviews) never touch files. Today the tour/user cascades cannot fire with
+reviews present: users are never deleted (invariant 21), and
+`TourService::delete()` refuses a tour with bookings, which every reviewed
+tour has (`bookings.tour_id` is also `restrictOnDelete`). A future "delete
+user/tour" feature must delete review photo files itself. A request above
+20 MB gets a 413 from nginx/PHP without a field error (the UI shows a generic
+message). Photos can only be added when the review is written.
+
+**Rejected.** `photo_1..3` columns (order and count become code, not data). A
+trigger counting rows (more to explain, and racy without a lock). Validation
+only (cheap to enforce in the schema, so no reason not to). Keeping
+`photo_path` alongside (two sources of truth). Accepting both `photo` and
+`photos[]` (a code path for a client that does not exist). Lowering photos to
+3 MB (refuses ordinary phone photos). Deleting files in a model `deleting`
+event (runs before the commit, so a rollback would leave rows pointing to
+deleted files, and hides a side effect in the model).

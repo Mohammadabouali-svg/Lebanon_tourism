@@ -79,6 +79,13 @@ defence against XSS.
 **8. Review photos gallery.** Allow up to three photos per review. You need a
 `review_photos` table, array validation (`photos.*`), and cleanup of the
 files when a review is deleted.
+*Implemented:* table `review_photos` (at most three by CHECK
+`review_photos_position_range` + unique `(review_id, position)`); the old
+`reviews.photo_path` is copied into it and dropped; the API returns
+`photos: [{id, url}]` and accepts `photos[]`; `ReviewService` removes the files
+when a request fails halfway and after a review is deleted (D21). Tests in
+`ReviewTest`. Write-up:
+[exercises/08-review-photos.md](exercises/08-review-photos.md).
 
 ## Advanced
 
