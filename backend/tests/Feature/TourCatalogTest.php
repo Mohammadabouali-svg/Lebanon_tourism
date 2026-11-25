@@ -29,6 +29,32 @@ class TourCatalogTest extends TestCase
         $this->getJson("/api/tours/{$suspended->id}")->assertNotFound();
     }
 
+    // The "Sold out" badge on tour cards (exercise 3) relies on these two
+    // facts: a full tour stays in the public list, and the API says it
+    // cannot be booked. The frontend decides nothing; it only displays them.
+    public function test_a_sold_out_tour_is_still_listed_but_not_bookable(): void
+    {
+        $tour = Tour::factory()->create(['capacity' => 8, 'booked_spots' => 8]);
+
+        $this->getJson('/api/tours')
+            ->assertOk()
+            ->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.id', $tour->id)
+            ->assertJsonPath('data.0.available_spots', 0)
+            ->assertJsonPath('data.0.is_bookable', false);
+    }
+
+    public function test_a_tour_with_spots_left_is_bookable(): void
+    {
+        $tour = Tour::factory()->create(['capacity' => 8, 'booked_spots' => 7]);
+
+        $this->getJson('/api/tours')
+            ->assertOk()
+            ->assertJsonPath('data.0.id', $tour->id)
+            ->assertJsonPath('data.0.available_spots', 1)
+            ->assertJsonPath('data.0.is_bookable', true);
+    }
+
     public function test_the_public_tour_page_shows_the_meeting_point(): void
     {
         $tour = Tour::factory()->create(['meeting_point' => 'Byblos harbour, next to the fish market']);

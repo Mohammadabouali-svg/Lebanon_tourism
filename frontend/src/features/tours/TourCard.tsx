@@ -1,16 +1,32 @@
 import { Link } from 'react-router'
 import { StarRating } from '@/components/StarRating'
+import { Badge } from '@/components/ui/Badge'
+import { cn } from '@/lib/cn'
 import { formatDateRange } from '@/lib/dates'
 import { formatMoney } from '@/lib/money'
 import type { Tour } from '@/lib/types'
 import { TourImage } from './TourImage'
 
 export function TourCard({ tour }: { tour: Tour }) {
-  const fewSpotsLeft = tour.available_spots > 0 && tour.available_spots <= 5
+  // "Sold out" means exactly "no spots left", so we test available_spots, not
+  // is_bookable: is_bookable is also false for draft or started tours, which
+  // are not sold out. (The public list only returns published upcoming tours,
+  // so on a card the two agree today; this keeps the label honest if that changes.)
+  const soldOut = tour.available_spots === 0
+  const fewSpotsLeft = !soldOut && tour.available_spots <= 5
 
   return (
     <article className="group relative flex flex-col overflow-hidden rounded-xl border border-stone-200 bg-white shadow-sm transition-shadow hover:shadow-md">
-      <TourImage tour={tour} className="aspect-[16/10] w-full" />
+      <div className="relative">
+        {/* Muted, but still a link: the detail page (itinerary, reviews) stays useful. */}
+        <TourImage tour={tour} className={cn('aspect-[16/10] w-full', soldOut && 'opacity-60')} />
+        {/* Real text, not colour alone, so screen readers announce it with the card. */}
+        {soldOut && (
+          <Badge tone="red" className="absolute right-3 top-3 shadow-sm">
+            Sold out
+          </Badge>
+        )}
+      </div>
       <div className="flex flex-1 flex-col p-4">
         <p className="text-xs font-medium uppercase tracking-wide text-brand-700">
           {tour.city?.name}
@@ -32,7 +48,7 @@ export function TourCard({ tour }: { tour: Tour }) {
             <span className="text-sm text-stone-500"> / person</span>
           </p>
           <p className={fewSpotsLeft ? 'text-sm font-medium text-amber-700' : 'text-sm text-stone-500'}>
-            {tour.available_spots === 0 ? 'Sold out' : `${tour.available_spots} spots left`}
+            {soldOut ? 'Sold out' : `${tour.available_spots} spots left`}
           </p>
         </div>
       </div>

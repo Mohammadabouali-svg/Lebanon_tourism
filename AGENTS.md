@@ -432,7 +432,7 @@ that #5 and #9 depend on). Update the status column as work lands.
 | R | Reading exercises | Password broker, Sanctum stateful, route middleware audit | todo |
 | 1 | Meeting point | Optional `meeting_point` (string 255, public) on tours; migration `2026_11_10_000100`, 5 tests in `TourManagementTest` / `TourCatalogTest` | done: verified 2026-11-24 (90 tests pass, build + lint + pint OK, shown on tour page) |
 | 2 | Price limit | `max:1000000` cents in `TourRequest` (was $100,000) + readable message + form hint; validation only, no CHECK (D17); 3 tests in `TourManagementTest` | done: merged 2026-11-24 (PR #1; 93 tests, pint, build, lint, manual check OK) |
-| 3 | Sold-out badge | Frontend only; uses `available_spots`, `is_bookable` | todo |
+| 3 | Sold-out badge | `Badge` over the image in `TourCard.tsx` when `available_spots === 0` (not `!is_bookable`), image muted, still a link; book button was already hidden on detail/booking pages; 2 characterisation tests in `TourCatalogTest`; no Vitest (no new dependency) | done: verified 2026-11-25 (95 tests, build + lint + pint OK, manual check guest + traveler) |
 | 5 | Expire stale pending bookings | Artisan command, 15 min; `BookingService::releaseSpots()` is private today, so expose a deliberate public method; schedule in `routes/console.php` (scheduler runs only in prod compose: test the command directly); `travel()` | todo |
 | 6 | Admin moderation lock | `moderated_at`; discuss policy vs request vs service first | todo |
 | 4 | Change e-mail | `pending_email` + signed link to new address; swap on click | todo |

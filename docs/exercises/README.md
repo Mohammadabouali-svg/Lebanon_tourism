@@ -8,6 +8,7 @@ the tests that prove it, and how it was verified.
 |---|---|---|
 | 1 | Meeting point | [01-meeting-point.md](01-meeting-point.md) |
 | 2 | Price limit | [02-price-limit.md](02-price-limit.md) |
+| 3 | "Sold out" badge | [03-sold-out-badge.md](03-sold-out-badge.md) |
 
 When an exercise is finished, add its write-up here with the same sections:
 **What was asked**, **Decisions**, **What was done**, **Tests**,

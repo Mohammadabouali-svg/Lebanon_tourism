@@ -273,6 +273,13 @@ form, so card data never touches our code or servers.
 - **No `dangerouslySetInnerHTML`.** All text from users (tour descriptions,
   reviews, names) is rendered as text, which React escapes. Line breaks are
   kept with the CSS class `whitespace-pre-line`, not by injecting `<br>`.
+- **Display server-decided flags, don't re-derive them.** Tours carry
+  `available_spots` and `is_bookable` from the API. The card's "Sold out"
+  badge checks `available_spots === 0` (that is literally what "sold out"
+  means), while the detail and booking pages hide the book button on
+  `!is_bookable` (which also covers started or draft tours). Neither page
+  works out bookability from dates itself, and the API refuses a booking
+  anyway (`not_enough_spots`).
 - **Code splitting.** Operator and admin pages are `lazy` routes in
   `router.tsx`. Their code is a separate download that travelers never fetch.
 - **Page titles.** React 19 moves a `<title>` rendered anywhere into

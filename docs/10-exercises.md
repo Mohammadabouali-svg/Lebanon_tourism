@@ -26,6 +26,11 @@ for why there is no database constraint. Write-up:
 **3. "Sold out" badge.** The API already returns `available_spots` and
 `is_bookable`. Show a badge on tour cards and hide the book button. Pure
 frontend.
+*Implemented:* a "Sold out" `Badge` over the image in `TourCard.tsx` (shown
+when `available_spots === 0`, image muted); the detail and booking pages
+already hid the book button on `!is_bookable`. Two tests in
+`TourCatalogTest` pin the API behaviour the badge relies on. Write-up:
+[exercises/03-sold-out-badge.md](exercises/03-sold-out-badge.md).
 
 ## Intermediate
 
