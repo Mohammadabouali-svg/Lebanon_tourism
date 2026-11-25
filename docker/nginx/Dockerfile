@@ -13,4 +13,7 @@ RUN npm run build
 
 FROM nginx:1.29-alpine AS prod
 COPY docker/nginx/prod.conf /etc/nginx/conf.d/default.conf
+# Not in conf.d/: nginx loads every file there at http level. prod.conf
+# includes this one inside its server and location blocks.
+COPY docker/nginx/security-headers.conf /etc/nginx/snippets/security-headers.conf
 COPY --from=frontend-build /app/dist /usr/share/nginx/html

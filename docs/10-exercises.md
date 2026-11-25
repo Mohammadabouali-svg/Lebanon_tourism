@@ -75,6 +75,16 @@ status change is refused in `TourService` with the code `tour_moderated`
 in `docker/nginx/prod.conf` (`default-src 'self'; img-src 'self' data:; ...`).
 Check the browser console for anything it blocks. CSP is a second line of
 defence against XSS.
+*Implemented:* `docker/nginx/security-headers.conf`, included at server level
+and in every location with its own `add_header` (which had silently dropped
+the server-level security headers from `index.html`, the bundles and
+`/storage`). The
+React page gets `default-src 'self'` with `img-src 'self' blob:` (upload
+previews; no `data:`, nothing uses it) and no `'unsafe-*'`; every other
+response gets `default-src 'none'; frame-ancestors 'none'`. Enforced, no
+report endpoint, nothing in dev (D22). Checked with `curl -I` and the browser
+console on the prod stack. Write-up:
+[exercises/07-csp-header.md](exercises/07-csp-header.md).
 
 **8. Review photos gallery.** Allow up to three photos per review. You need a
 `review_photos` table, array validation (`photos.*`), and cleanup of the

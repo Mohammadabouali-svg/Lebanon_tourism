@@ -408,7 +408,7 @@ browser redirect → card data never touches our server.
 
 | Need | Read |
 |---|---|
-| Why a choice was made | `docs/decisions.md` (D1–D21) |
+| Why a choice was made | `docs/decisions.md` (D1–D22) |
 | Setup / troubleshooting | `docs/01-getting-started.md` |
 | Request path, folder map | `docs/02-architecture.md` |
 | Sessions, CSRF, roles, policies | `docs/03-authentication.md` |
@@ -437,7 +437,7 @@ that #5 and #9 depend on). Update the status column as work lands.
 | 6 | Admin moderation lock | `moderated_at` (timestampTz, not fillable) + CHECK `tours_moderated_means_archived`; admin archive locks, other admin status unlocks (`TourService::moderate()`); operator status change refused in `TourService::save()` under the row lock, 422 `tour_moderated` (service, not policy/Form Request: D19); 9 tests in `TourManagementTest` / `AdministrationTest` | done: verified 2026-11-25 (111 tests, pint, build, lint, manual check admin + operator OK) |
 | 4 | Change e-mail | `pending_email` (not fillable, CHECK `users_pending_email_differs`, no unique index); `POST`/`DELETE user/email-change` (current password, `throttle:6,1`); signed `POST email/change/{id}/{hash}` (hash of pending address, 60 min, no login); `EmailChangeService::confirm()` locks, re-checks free (`email_taken`), swaps, verifies, deletes old reset tokens, notifies old address after commit (D20); 23 tests in `EmailChangeTest` / `AccessControlTest` | done: verified 2026-11-25 (134 tests, pint, build, lint, manual check traveler2 OK) |
 | 8 | Review photos | `review_photos` (FK cascade, CHECK `review_photos_position_range` 1..3 + unique `(review_id, position)`); `photo_path` copied as position 1 then dropped (`2026_11_25_000300`/`000400`, `down()` restores position 1); `photo_url` → `photos: [{id, url}]`, request `photos[]` (`max:3`, 5 MB each); request limit 20 MB (`app.ini`, nginx dev + prod); `ReviewService` stores files first, deletes them on any failure, deletes files after commit on review delete (D21); 26 tests in `ReviewTest` | done: verified 2026-11-25 (160 tests, pint, build, lint, manual check traveler 3 photos + 4th refused + delete OK) |
-| 7 | CSP header | `docker/nginx/prod.conf`; check console in prod stack | todo |
+| 7 | CSP header | `docker/nginx/security-headers.conf` included at server level + every location with its own `add_header` (fixes headers missing on `index.html`, bundles, `/storage`); page CSP `default-src 'self'`, `img-src 'self' blob:`, no `unsafe-*`; other responses `default-src 'none'`; enforced, no dev CSP (D22) | done: verified 2026-11-25 (curl -I all locations, browser console clean as guest/traveler/operator/admin on prod stack) |
 | 12 | Audit log | `audit_events` for admin actions + admin page | todo |
 | 11 | Faster search | `pg_trgm` GIN or `tsvector`; `EXPLAIN ANALYZE` on 100k tours | todo |
 | 9 | Stripe gateway | Checkout + signed webhook confirms; bind when `PAYMENT_GATEWAY=stripe` | todo |
@@ -548,6 +548,17 @@ the machine you are on: they are fallbacks, not requirements.
   `@AGENTS.md` instead of being a symlink.
 - Never put personal data (e-mail addresses, tokens) in docs, commits, PRs or
   requests to outside services.
+
+### Running the prod stack locally (seen in Exercise 7)
+
+- Built from the OneDrive folder, the prod PHP image had read-only
+  directories (`config:cache` failed, `php` restarting). Not fixed yet
+  (follow-up); the CSP check used a local derived image with
+  `chmod -R u+w storage bootstrap/cache`.
+- The prod image has no Faker (`--no-dev`): `DemoSeeder` cannot run in it.
+- Cookies ignore ports: logging in on `http://localhost` (prod) replaces the
+  dev session of `localhost:5173`. Log in to dev again afterwards.
+- After recreating `php`, restart `nginx` (it caches the old IP: 502).
 
 ## 15. Splitting work and handing off
 

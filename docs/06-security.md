@@ -91,6 +91,42 @@ A short list to remember:
 - file types (check the content, not the name)
 - anything in the query string, form fields, headers or cookies the app did not sign
 
+## Security headers and Content-Security-Policy
+
+React escaping (row 6 above) is the first defence against XSS. The
+**Content-Security-Policy** is the second: even if some markup were injected
+one day (a new library, a future `dangerouslySetInnerHTML`), the browser would
+refuse to run it. The production nginx sends these headers on every response
+([`docker/nginx/security-headers.conf`](../docker/nginx/security-headers.conf),
+D22):
+
+| Header | Value | Stops |
+|---|---|---|
+| `Content-Security-Policy` (the page, `index.html`) | `default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' blob:; connect-src 'self'; font-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'` | injected `<script>`, `onerror="..."` and `javascript:` code; scripts, images and requests to other sites (stealing data); `<base>` hijacking; forms posting elsewhere; framing |
+| `Content-Security-Policy` (everything else: API, uploads, bundles, errors) | `default-src 'none'; frame-ancestors 'none'` | an upload or a JSON response opened as a page can load or run nothing |
+| `X-Frame-Options` | `DENY` | clickjacking in old browsers (`frame-ancestors` in new ones) |
+| `X-Content-Type-Options` | `nosniff` | the browser guessing "this image is really HTML" |
+| `Referrer-Policy` | `strict-origin-when-cross-origin` | full URLs leaking to other sites |
+
+How the policy fits the app: the Vite build has no inline script or style,
+React's `style={{...}}` props are set through the CSSOM (CSP does not block
+that), and `blob:` is allowed for the upload previews. There is no
+`'unsafe-inline'` or `'unsafe-eval'`: either would let injected code run and
+make the policy close to useless.
+
+**The `add_header` trap.** nginx inherits `add_header` from the server block
+only into locations that have **no** `add_header` of their own. Before
+Exercise 7, one `add_header Cache-Control` in `location /` silently removed
+every security header from `index.html`. Rule: a location that uses
+`add_header` must `include` the snippet too. Check with
+`curl -I http://<host>/` after changing the config.
+
+**Proof:** no PHP test can see an nginx header. The check is `nginx -t`,
+`curl -I` per location, and the browser console as each role (see
+[exercises/07-csp-header.md](exercises/07-csp-header.md)). In development the
+pages come from Vite, which needs inline scripts and a websocket, so there is
+no CSP there: test CSP-related changes on the prod stack.
+
 ## Production hardening checklist
 
 See [09-deployment.md](09-deployment.md#go-live-checklist).

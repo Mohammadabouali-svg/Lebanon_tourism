@@ -435,3 +435,79 @@ only (cheap to enforce in the schema, so no reason not to). Keeping
 3 MB (refuses ordinary phone photos). Deleting files in a model `deleting`
 event (runs before the commit, so a rollback would leave rows pointing to
 deleted files, and hides a side effect in the model).
+
+## D22. Content-Security-Policy: strict, enforced, from one nginx snippet
+
+**Context.** Exercise 7 asks for a strict `Content-Security-Policy` in
+`docker/nginx/prod.conf`. A `curl -I` on the production stack first showed a
+worse gap: nginx copies `add_header` from the server block only into
+locations that define **no** `add_header` themselves. `location /`
+(`Cache-Control`), `/assets/` (`Cache-Control`) and `/storage/` (its own
+`nosniff`) each had one, so `index.html` and the bundles got **none** of the
+server-level `X-Content-Type-Options`, `X-Frame-Options` and `Referrer-Policy`
+headers; only `/api` and `/sanctum` did. A CSP added at server level would
+never have reached the page.
+
+**Decision.**
+- **One snippet**, `docker/nginx/security-headers.conf`, copied by the nginx
+  Dockerfile to `/etc/nginx/snippets/` (not `conf.d/`, which nginx loads at
+  http level). It is included at server level and in every location that has
+  an `add_header` of its own. It sends the three existing headers and
+  `Content-Security-Policy $content_security_policy`.
+- **Two policies, one header.** The server block sets the variable to
+  `default-src 'none'; frame-ancestors 'none'` (API JSON, uploads, bundles,
+  errors never need to load anything); `location /` sets it to the page
+  policy. A variable instead of two `add_header` lines, because a browser
+  enforces every CSP header it receives, so two would intersect and break
+  the page.
+- **The page policy:** `default-src 'self'; script-src 'self'; style-src
+  'self'; img-src 'self' blob:; connect-src 'self'; font-src 'self';
+  object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors
+  'none'`. No `'unsafe-inline'` / `'unsafe-eval'`. `blob:` is for the upload
+  previews (`URL.createObjectURL`); `data:` (in the exercise's example) is
+  left out because the build and the code use none. `X-Frame-Options: DENY`
+  stays next to `frame-ancestors` for old browsers.
+- **Enforced right away**, not `Content-Security-Policy-Report-Only`, and no
+  `report-uri` / `report-to` endpoint.
+- **Nothing in development.** Vite serves the pages there and needs inline
+  scripts and a websocket for hot reload.
+- **No `upgrade-insecure-requests`.** Every URL is relative (same origin), so
+  there is nothing to upgrade; HTTPS belongs to the TLS proxy (and HSTS).
+
+**Why.** The snippet fixes the inheritance trap once for every location and
+gives the headers one source of truth, with a rule a reader can follow ("a
+location with `add_header` includes the snippet"). Repeating the lines per
+location would drift, and nginx's newer `add_header_inherit` directive is
+less obvious to a reader. Each source in the policy is one the app really
+uses; anything wider would allow attacks without serving a feature. The
+browser check on the production stack (every role, every page with images,
+previews, charts and lazy chunks) found nothing blocked, so a Report-Only
+phase would have added nothing, and a report endpoint would be a new
+unauthenticated public write endpoint (spam, storage) for a single-origin app
+we fully control. A dev CSP would have to allow inline scripts and so prove
+nothing.
+
+**Consequences.** No PHP test can check nginx headers: the proof is `nginx
+-t`, `curl -I` per location and the browser console on the prod stack. Any new
+third-party resource (CDN, web fonts, analytics, maps, payment widgets) is
+blocked until the policy lists it, which is intended. Any new nginx location
+with an `add_header` must include the snippet, or it loses every security
+header again. CSP problems only show on the prod stack, never on Vite.
+
+**Exercise 9 (Stripe) note.** Exercise 9 uses hosted Stripe Checkout. If the
+API returns the Checkout URL and the browser goes there with
+`window.location` (or a link), that is a *navigation*: CSP does not restrict
+it, so the policy needs no change. It needs one in these cases:
+- a `<form>` that posts to Stripe: `form-action 'self' https://checkout.stripe.com`;
+- Stripe.js / Elements or embedded Checkout on our page: `script-src 'self'
+  https://js.stripe.com`, `frame-src https://js.stripe.com https://checkout.stripe.com`
+  (or `https://*.stripe.com`, following Stripe's published CSP list at that
+  time), and `connect-src 'self' https://api.stripe.com`.
+The webhook is server to server and needs nothing.
+
+**Rejected.** `add_header` repeated in each location (drifts; the next
+location forgets it). `add_header_inherit merge` (newer, less familiar). The
+same page policy on every response (wider than JSON and images need).
+`'unsafe-inline'` for styles (not needed: no inline styles in the build, and
+React style props are not blocked). `data:` in `img-src` (unused). Report-Only
+first and a report endpoint (see Why). A CSP on the Vite dev server.

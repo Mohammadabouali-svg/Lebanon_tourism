@@ -122,4 +122,7 @@ remove old columns last.
 - [ ] First admin created with `php artisan app:create-admin`; no demo accounts
 - [ ] Monitoring on `GET /up` and alerts on errors in the logs
 - [ ] `composer audit` and `npm audit` clean, and a plan to update dependencies regularly
-- [ ] A `Content-Security-Policy` header (see [10-exercises.md](10-exercises.md))
+- [x] A `Content-Security-Policy` header: built into the nginx image
+  (`docker/nginx/security-headers.conf`, D22). If you add a third-party
+  service (payments, analytics, a CDN, web fonts), extend the policy first
+  and check the browser console, or the browser will block it
