@@ -72,7 +72,7 @@ export const router = createBrowserRouter([
           {
             element: <RequireAuth roles={['traveler']} requireVerified />,
             children: [
-              { path: 'tours/:id/book', element: <BookingPage /> },
+              { path: 'tours/:id/departures/:departureId/book', element: <BookingPage /> },
               { path: 'bookings', element: <MyBookingsPage /> },
             ],
           },

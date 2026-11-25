@@ -103,8 +103,8 @@ second origin or CORS config.
 | `app/Http/Requests/` | Input validation (Form Requests) |
 | `app/Http/Controllers/Api/{,Auth,Operator,Admin}/` | Thin HTTP layer, one folder per audience |
 | `app/Http/Resources/` | Output shaping. Models are never returned directly. |
-| `app/Policies/` | Record-level authorization (`TourPolicy`, `BookingPolicy`, `ReviewPolicy`) |
-| `app/Services/` | Business rules: `BookingService`, `PricingService` (+ `Quote`), `WalletService`, `TourService`, `ReviewService` (review + photo files) |
+| `app/Policies/` | Record-level authorization (`TourPolicy`, `DeparturePolicy` (delegates to `TourPolicy`), `BookingPolicy`, `ReviewPolicy`) |
+| `app/Services/` | Business rules: `BookingService`, `PricingService` (+ `Quote`), `WalletService`, `TourService`, `DepartureService` (operator dates), `ReviewService` (review + photo files) |
 | `app/Payments/` | `PaymentGateway` interface, `ChargeResult`, `FakePaymentGateway` (approves in dev, declines in prod) |
 | `app/Queries/` | Reporting queries (`BookingStats`) — aggregate in SQL |
 | `app/Exports/`, `app/Support/CsvExport.php` | CSV with formula-injection protection |
@@ -120,7 +120,7 @@ second origin or CORS config.
 
 ### One request, layer by layer
 
-`POST /api/tours/12/bookings` → nginx → global middleware → Sanctum stateful
+`POST /api/departures/31/bookings` → nginx → global middleware → Sanctum stateful
 (session + XSRF, 419) → route group middleware `auth:sanctum` (401) →
 `active` (403) → `verified` (403) → `role:traveler` (403) → `throttle:bookings`
 (429) → route model binding (404, runs *after* role checks) → Form Request
@@ -265,7 +265,7 @@ even if every test passes.
 **Naming**
 - Tests: `test_<the_rule_in_plain_english>` in snake_case.
 - Migrations: `make:migration add_<column>_to_<table>` / `create_<table>_table`.
-- Constraints: `<table>_<rule>` (e.g. `tours_no_overbooking`).
+- Constraints: `<table>_<rule>` (e.g. `departures_no_overbooking`).
 
 ## 6. How to make a change (the senior-engineer workflow)
 
@@ -377,7 +377,11 @@ browser redirect → card data never touches our server.
 - One behaviour per test; the name states the rule.
 - Factories: `User::factory()` states `withBalance(cents)`, `unverified()`,
   `admin()`, `operator(OperatorStatus::X)` (default approved), `suspended()`;
-  `Tour::factory()` states `draft()`, `started()`, plus `->for($op, 'operator')`;
+  `Tour::factory()` states `draft()`, `moderated()`, `withDeparture([..])`, plus
+  `->for($op, 'operator')`; a tour has no dates or spots of its own (Exercise
+  10): `Departure::factory()->for($tour)->create(['capacity' => 3, 'booked_spots' => 2])`,
+  state `started()`; `Booking::factory()->for($tour)` or `->for($departure)`
+  (keeps `tour_id` and `departure_id` consistent);
   `Discount::factory()->fixed(cents)` / `->percent(n)`. Base `TestCase` adds
   SPA `Origin`/`Referer` headers and `$this->traveler(balanceCents: ..)`
   (a verified traveler).
@@ -408,7 +412,7 @@ browser redirect → card data never touches our server.
 
 | Need | Read |
 |---|---|
-| Why a choice was made | `docs/decisions.md` (D1–D22) |
+| Why a choice was made | `docs/decisions.md` (D1–D23) |
 | Setup / troubleshooting | `docs/01-getting-started.md` |
 | Request path, folder map | `docs/02-architecture.md` |
 | Sessions, CSRF, roles, policies | `docs/03-authentication.md` |
@@ -424,8 +428,10 @@ browser redirect → card data never touches our server.
 ## 11. Current work: the exercises (`docs/10-exercises.md`)
 
 Agreed order: reading exercises first, then 1 → 2 → 3, then 5, 6, 4, 8, 7,
-then 12, 11, 9, 10 (recurring departures last: it refactors booking/capacity
-that #5 and #9 depend on). Update the status column as work lands.
+then 10, 12, 11, 9. Recurring departures (#10) was first planned last,
+because it refactors the booking/capacity code that #5 and #9 depend on; the
+user chose to do it before 12, 11 and 9, so #9 (Stripe) now builds on
+departures. Update the status column as work lands.
 
 | # | Exercise | Key notes | Status |
 |---|---|---|---|
@@ -441,7 +447,7 @@ that #5 and #9 depend on). Update the status column as work lands.
 | 12 | Audit log | `audit_events` for admin actions + admin page | todo |
 | 11 | Faster search | `pg_trgm` GIN or `tsvector`; `EXPLAIN ANALYZE` on 100k tours | todo |
 | 9 | Stripe gateway | Checkout + signed webhook confirms; bind when `PAYMENT_GATEWAY=stripe` | todo |
-| 10 | Recurring departures | `departures` table; plan data migration before code | todo |
+| 10 | Recurring departures | `departures (tour_id, starts_on, capacity, booked_spots)`, length stays on the tour (`duration_days` plain, 1..30); expand → migrate → contract (`2026_11_26_000100`/`000200`/`000300`), `down()` refuses unless one departure per tour; `bookings.departure_id` + kept `tour_id` with composite FK; booking/quote at `POST /api/departures/{departure}/...`; locks tour FOR SHARE then departure FOR UPDATE; operator CRUD + weekly series (`weeks` ≤ 26), codes `departure_has_bookings`, `departure_started` (D23) | done: verified 2026-11-25 (204 tests, pint, build, lint, manual check guest/traveler/operator/admin; dev rollback + re-migrate identical) |
 
 ## 12. Git
 

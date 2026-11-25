@@ -2,7 +2,6 @@
 
 namespace App\Http\Resources;
 
-use App\Enums\TourStatus;
 use App\Models\Tour;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
@@ -21,16 +20,10 @@ class TourResource extends JsonResource
             // to decide whether the tour is practical to reach.
             'meeting_point' => $this->meeting_point,
             'price_cents' => $this->price_cents,
-            'capacity' => $this->capacity,
-            'booked_spots' => $this->booked_spots,
-            'available_spots' => $this->available_spots,
-            'starts_on' => $this->starts_on->toDateString(),
-            'ends_on' => $this->ends_on->toDateString(),
+            // The length of every departure; dates and spots are per departure
+            // (Exercise 10, D23).
             'duration_days' => $this->duration_days,
             'status' => $this->status,
-            'is_bookable' => $this->status === TourStatus::Published
-                && ! $this->hasStarted()
-                && $this->available_spots > 0,
             // The admin moderation lock (D19). Safe to show publicly: the
             // tours_moderated_means_archived CHECK keeps it null on every
             // published tour, so only operators and admins ever see a value.
@@ -43,6 +36,18 @@ class TourResource extends JsonResource
                 'company_name' => $this->operator->operatorProfile?->company_name,
             ]),
             'itinerary' => ItineraryItemResource::collection($this->whenLoaded('itineraryItems')),
+
+            // When the controller loaded `upcomingDepartures` (soonest first).
+            // DepartureResource never embeds its tour, so this cannot recurse.
+            'upcoming_departures' => DepartureResource::collection($this->whenLoaded('upcomingDepartures')),
+            // null (not {}) when there is none.
+            'next_departure' => $this->whenLoaded('upcomingDepartures', fn () => $this->upcomingDepartures->isEmpty()
+                ? null
+                : DepartureResource::make($this->upcomingDepartures->first())),
+            // The "Sold out" badge (Exercise 3): dates are coming, none has a spot.
+            // A tour with no upcoming departure is not "sold out", just not running.
+            'is_sold_out' => $this->whenLoaded('upcomingDepartures', fn () => $this->upcomingDepartures->isNotEmpty()
+                && $this->upcomingDepartures->every(fn ($departure) => $departure->available_spots === 0)),
 
             // Filled by withAvg()/withCount() in the controllers.
             'rating_average' => $this->whenHas('reviews_avg_rating', fn () => $this->reviews_avg_rating === null

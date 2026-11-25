@@ -19,7 +19,7 @@ class BookingController extends Controller
     public function index(Request $request): AnonymousResourceCollection
     {
         $bookings = $this->query($request)
-            ->with(['tour.city', 'tour.operator.operatorProfile', 'user', 'discount'])
+            ->with(['tour.city', 'tour.operator.operatorProfile', 'departure.tour', 'user', 'discount'])
             ->latest('id')
             ->paginate(25)
             ->withQueryString();

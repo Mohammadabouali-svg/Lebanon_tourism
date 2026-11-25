@@ -26,7 +26,7 @@ export function BookingsTable({ bookings, showOperator = false }: { bookings: Bo
             <Td className="font-mono text-xs">{booking.reference}</Td>
             <Td>
               <span className="font-medium text-stone-900">{booking.tour?.title}</span>
-              {booking.tour && <span className="block text-xs text-stone-500">Departs {formatDate(booking.tour.starts_on)}</span>}
+              {booking.departure && <span className="block text-xs text-stone-500">Departs {formatDate(booking.departure.starts_on)}</span>}
               {showOperator && booking.tour?.operator?.company_name && (
                 <span className="block text-xs text-stone-500">{booking.tour.operator.company_name}</span>
               )}

@@ -10,10 +10,12 @@ import { useReferenceData } from '@/features/tours/queries'
 import { useFilePreview } from '@/hooks/useFilePreview'
 import { useFormFields } from '@/hooks/useFormFields'
 import { isStatus, parseApiError, type FieldErrors } from '@/lib/api'
-import { formatDateTime, todayIso } from '@/lib/dates'
+import { useFlash } from '@/hooks/useFlash'
+import { formatDateTime } from '@/lib/dates'
 import { centsToDollarInput, parseDollarsToCents } from '@/lib/money'
 import type { ReferenceData, Tour, TourStatus } from '@/lib/types'
 import { NotFoundPage } from '@/pages/NotFoundPage'
+import { DeparturesSection } from './DeparturesSection'
 import { useOperatorTour, useSaveTour } from './queries'
 
 /** /operator/tours/new and /operator/tours/:id/edit */
@@ -47,6 +49,7 @@ const newRow = (day = '1'): ItineraryRow => ({ key: `row-${++rowCounter}`, day, 
 
 function TourForm({ tour, reference }: { tour: Tour | null; reference: ReferenceData }) {
   const navigate = useNavigate()
+  const flash = useFlash()
   const save = useSaveTour(tour?.id ?? null)
   const { values, field, set } = useFormFields({
     title: tour?.title ?? '',
@@ -56,9 +59,7 @@ function TourForm({ tour, reference }: { tour: Tour | null; reference: Reference
     region_id: tour?.city ? String(tour.city.region_id) : '',
     city_id: tour?.city ? String(tour.city.id) : '',
     price: tour ? centsToDollarInput(tour.price_cents) : '',
-    capacity: tour ? String(tour.capacity) : '12',
-    starts_on: tour?.starts_on ?? '',
-    ends_on: tour?.ends_on ?? '',
+    duration_days: tour ? String(tour.duration_days) : '1',
     status: (tour?.status ?? 'draft') as TourStatus,
   })
   const [itinerary, setItinerary] = useState<ItineraryRow[]>(() =>
@@ -104,9 +105,7 @@ function TourForm({ tour, reference }: { tour: Tour | null; reference: Reference
     form.append('category_id', values.category_id)
     form.append('city_id', values.city_id)
     form.append('price_cents', String(priceCents))
-    form.append('capacity', values.capacity)
-    form.append('starts_on', values.starts_on)
-    form.append('ends_on', values.ends_on)
+    form.append('duration_days', values.duration_days)
     form.append('status', values.status)
     itinerary.forEach((row, index) => {
       form.append(`itinerary[${index}][day]`, row.day)
@@ -116,13 +115,18 @@ function TourForm({ tour, reference }: { tour: Tour | null; reference: Reference
     if (image) form.append('image', image)
 
     save.mutate(form, {
-      onSuccess: (saved) => navigate('/operator/tours', { state: { flash: `"${saved.title}" has been saved.` } }),
+      // A new tour has no dates yet: go on to its edit page, where they are added.
+      onSuccess: (saved) =>
+        tour
+          ? navigate('/operator/tours', { state: { flash: `"${saved.title}" has been saved.` } })
+          : navigate(`/operator/tours/${saved.id}/edit`, { state: { flash: `"${saved.title}" has been created. Now add the dates it runs on.` } }),
     })
   }
 
   return (
     <>
       <PageHeader title={tour ? 'Edit tour' : 'New tour'} description={tour?.title} />
+      {flash && <Alert tone="success" className="mb-6">{flash}</Alert>}
 
       <form onSubmit={submit} className="space-y-6" noValidate>
         {error && Object.keys(errors).length === 0 && <Alert tone="error">{error.message}</Alert>}
@@ -183,10 +187,17 @@ function TourForm({ tour, reference }: { tour: Tour | null; reference: Reference
           </div>
         </CardSection>
 
-        <CardSection title="Dates, price and capacity">
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <TextField label="First day" type="date" min={tour ? undefined : todayIso(1)} {...field('starts_on')} error={errors.starts_on} />
-            <TextField label="Last day" type="date" min={values.starts_on || undefined} {...field('ends_on')} error={errors.ends_on} />
+        <CardSection title="Length and price" description={tour ? 'Dates and group sizes are set per departure, below.' : 'Dates and group sizes are added after the tour is created.'}>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <TextField
+              label="Length (days)"
+              type="number"
+              min={1}
+              max={30}
+              {...field('duration_days')}
+              error={errors.duration_days}
+              hint="Every departure lasts this many days; itinerary days must fit inside."
+            />
             {/* The hint is guidance only: the API enforces the $10,000 cap (TourRequest). */}
             <TextField
               label="Price per person (USD)"
@@ -195,15 +206,6 @@ function TourForm({ tour, reference }: { tour: Tour | null; reference: Reference
               {...field('price')}
               error={priceError ?? errors.price_cents}
               hint="Between $1 and $10,000."
-            />
-            <TextField
-              label="Capacity"
-              type="number"
-              min={1}
-              max={500}
-              {...field('capacity')}
-              error={errors.capacity}
-              hint={tour ? `${tour.booked_spots} spot(s) already booked` : undefined}
             />
           </div>
         </CardSection>
@@ -260,6 +262,12 @@ function TourForm({ tour, reference }: { tour: Tour | null; reference: Reference
           <ButtonLink to="/operator/tours" variant="secondary">Cancel</ButtonLink>
         </div>
       </form>
+
+      {tour && (
+        <div className="mt-6">
+          <DeparturesSection tour={tour} />
+        </div>
+      )}
     </>
   )
 }

@@ -18,7 +18,7 @@ final class BookingsExport
     public static function download(Builder $bookings, string $filename): StreamedResponse
     {
         $rows = $bookings
-            ->with(['tour:id,title,starts_on', 'user:id,name,email,phone', 'discount:id,code'])
+            ->with(['tour:id,title', 'departure:id,starts_on', 'user:id,name,email,phone', 'discount:id,code'])
             ->orderBy('id')
             // lazy() fetches 1000 rows at a time instead of everything at once.
             ->lazy(1000)
@@ -26,7 +26,7 @@ final class BookingsExport
                 $booking->reference,
                 $booking->created_at->toDateTimeString(),
                 $booking->tour->title,
-                $booking->tour->starts_on->toDateString(),
+                $booking->departure->starts_on->toDateString(),
                 $booking->user->name,
                 $booking->user->email,
                 $booking->user->phone,

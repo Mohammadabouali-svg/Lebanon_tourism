@@ -176,8 +176,9 @@ To keep the project teachable, some things are listed as exercises instead of
 being built: e-mail address change with re-verification (since built in
 Exercise 4, see D20), cleanup of stale
 `pending` card bookings (since built in Exercise 5, see D18), a real Stripe
-driver, recurring departures, full-text search, admin "lock" on moderated
-tours (since built in Exercise 6, see D19). See [10-exercises.md](10-exercises.md).
+driver, recurring departures (since built in Exercise 10, see D23), full-text
+search, admin "lock" on moderated tours (since built in Exercise 6, see D19).
+See [10-exercises.md](10-exercises.md).
 
 ## D17. The tour price cap is validation only, not a database constraint
 
@@ -511,3 +512,99 @@ same page policy on every response (wider than JSON and images need).
 `'unsafe-inline'` for styles (not needed: no inline styles in the build, and
 React style props are not blocked). `data:` in `img-src` (unused). Report-Only
 first and a report endpoint (see Why). A CSP on the Vite dev server.
+
+## D23. Recurring departures: a `departures` table, moved in three migrations
+
+**Context.** Exercise 10: a tour had exactly one date (`tours.starts_on`,
+`ends_on`), one `capacity` and one `booked_spots` counter, so "the same tour
+every Saturday" needed one copy of the tour per Saturday. The exercise asks
+for a `departures` table that takes over booking and capacity, with the
+migration of existing data planned before any code. Dev data at the time:
+11 tours, 4 bookings on 3 of them, every counter equal to its bookings.
+
+**Decision.**
+- **Data model.** `departures (tour_id, starts_on, capacity, booked_spots)`.
+  Price, itinerary, status and **length** stay on the tour: `duration_days`
+  becomes a plain column (1..30, CHECK `tours_duration_range`), and a
+  departure's end date is computed as `starts_on + duration_days − 1`. No
+  status on departures.
+- **Bookings keep `tour_id`** next to the new `departure_id`. A composite
+  foreign key `(departure_id, tour_id) → departures (id, tour_id)` lets
+  Postgres guarantee they agree.
+- **Constraints**: `departures_capacity_positive`, `departures_no_overbooking`,
+  `departures_booked_spots_not_negative` (new: `unsignedSmallInteger` is a
+  signed `smallint` in Postgres), unique `(tour_id, starts_on)`
+  (`departures_one_per_day`). `departures.tour_id` cascades on delete; the
+  bookings FK restricts, so a departure with bookings can never disappear.
+- **Migration plan: expand → migrate → contract**, three migrations in one
+  release. (1) create the table; (2) one departure per tour by `INSERT ...
+  SELECT`, `bookings.departure_id` added nullable, backfilled by `UPDATE ...
+  FROM`, then `NOT NULL` + composite FK; (3) `duration_days DROP EXPRESSION`,
+  drop `capacity`, `booked_spots`, `starts_on`, `ends_on`. Each `down()` puts
+  the old shape back from the departures and **refuses** when a tour has
+  several departures (or, for step 3, none).
+- **Locking.** `BookingService` locks the tour `FOR SHARE`, then the
+  departure `FOR UPDATE`, always in that order. `DepartureService` locks only
+  the departure.
+- **Operators manage departures** through four endpoints in the operator
+  group (list, add, change, delete), ownership via `DeparturePolicy` →
+  `TourPolicy::update`, checked in the Form Requests' `authorize()`. Adding
+  takes an optional `weeks` (1..26): a weekly series, all or nothing. A
+  departure with any booking (even cancelled) keeps its date and cannot be
+  deleted; capacity cannot go below the booked spots; a started departure
+  cannot change. New codes: `departure_has_bookings`, `departure_started`.
+- **API contract.** Booking and quote move to `POST
+  /api/departures/{departure}/bookings` and `/quote`; the old `tours/{tour}`
+  URLs are gone. `TourResource` drops `capacity`, `booked_spots`,
+  `available_spots`, `starts_on`, `ends_on`, `is_bookable` and gains
+  `upcoming_departures`, `next_departure`, `is_sold_out`; `BookingResource`
+  gains `departure`. Every consumer (our React app) changed in the same
+  change.
+- **Catalogue.** A tour is listed while it has an upcoming departure;
+  "soonest" sorts by the next one (correlated `MIN(starts_on)` subquery on the
+  unique index); upcoming departures are eager-loaded for the cards.
+
+**Why.** One length per tour keeps the itinerary true for every date; a
+departure with its own end date could last 2 days under a 3-day itinerary.
+Keeping `bookings.tour_id` leaves the review rule, operator scoping
+(invariant 6), exports, statistics and the `(tour_id, status)` index
+untouched, and the composite key removes the usual risk of denormalising (two
+columns that disagree). Before the change each tour had exactly one date, so
+the data move is one to one and guesses nothing. Doing it in Postgres keeps
+it atomic and fast. A `down()` that refuses is honest: the old shape cannot
+hold several dates, and silently keeping one would leave counters that
+disagree with the bookings. The `FOR SHARE` lock keeps what the old `FOR
+UPDATE` on the tour gave (price and status stable during a booking; an
+operator save waits) without making bookings of different dates queue behind
+each other. Generated dates for "every Saturday" cover the exercise without
+a recurrence engine. Moving or deleting a booked date is a product decision
+(travelers were promised that day; refunded bookings must keep their date),
+so it is refused, not handled.
+
+**Rejected.** `starts_on` + `ends_on` per departure (length could disagree
+with the itinerary). Dropping `bookings.tour_id` (every tour-level query joins
+through departures, more change, no gain). Keeping the old tour columns "for
+compatibility" (two sources of truth that drift; `tours.booked_spots`
+stopped changing the moment bookings moved). A two-release deploy (the right
+call with live traffic; here code and migrations ship together). Departures
+inside the tour form as an array, replaced on every save, like the itinerary
+(booked departures must never be deleted). Stored recurrence rules (RRULE):
+much more to build and explain. Per-departure prices, waitlists, cancelling a
+whole departure with refunds: out of scope. A nested booking URL
+`tours/{tour}/departures/{departure}/bookings` (the tour adds nothing but a
+pair to check).
+
+**Consequences.**
+- A tour without an upcoming departure is not in the catalogue, even when
+  published. A new tour needs its dates added after it is created (the form
+  goes straight to its edit page).
+- Rolling back past these migrations is only possible while every tour has
+  exactly one departure.
+- `BookingFactory` derives `departure_id` from the tour (or `tour_id` from the
+  departure), so both `->for($tour)` and `->for($departure)` work.
+- True parallel bookings cannot be tested inside `RefreshDatabase`; the lock
+  order is checked through the query log, and the CHECK refuses overbooking
+  whatever happens.
+- Moving a booked departure to another date (with traveler notification),
+  cancelling a departure with refunds, per-departure prices and a date
+  filter in the catalogue are follow-ups.

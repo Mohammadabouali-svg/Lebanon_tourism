@@ -8,6 +8,7 @@ use App\Enums\PaymentMethod;
 use App\Enums\TourStatus;
 use App\Exceptions\BusinessRuleException;
 use App\Models\Booking;
+use App\Models\Departure;
 use App\Models\Discount;
 use App\Models\Tour;
 use App\Models\User;
@@ -29,8 +30,13 @@ use Illuminate\Support\Facades\Log;
 |   1. All-or-nothing: spots, discount usage, booking row and wallet debit
 |      are written in one database transaction. If any step fails, none of
 |      them happened.
-|   2. No races: the tour row is locked (SELECT ... FOR UPDATE) while spots
-|      are counted, so two travelers can never both get "the last spot".
+|   2. No races: the departure row is locked (SELECT ... FOR UPDATE) while
+|      its spots are counted, so two travelers can never both get "the last
+|      spot" of a date.
+|
+| Since Exercise 10 a booking is for a departure (one date of a tour), and
+| capacity and the booked_spots counter live on the departure (D23). The
+| price still comes from the tour.
 */
 final class BookingService
 {
@@ -43,11 +49,11 @@ final class BookingService
     /**
      * @throws BusinessRuleException
      */
-    public function book(User $user, Tour $tour, int $spots, PaymentMethod $method, ?string $discountCode): Booking
+    public function book(User $user, Departure $departure, int $spots, PaymentMethod $method, ?string $discountCode): Booking
     {
         return match ($method) {
-            PaymentMethod::Wallet => $this->bookWithWallet($user, $tour, $spots, $discountCode),
-            PaymentMethod::Card => $this->bookWithCard($user, $tour, $spots, $discountCode),
+            PaymentMethod::Wallet => $this->bookWithWallet($user, $departure, $spots, $discountCode),
+            PaymentMethod::Card => $this->bookWithCard($user, $departure, $spots, $discountCode),
         };
     }
 
@@ -55,12 +61,12 @@ final class BookingService
      * Wallet payments live in our own database, so the whole booking can be a
      * single transaction: either everything is saved, or nothing is.
      */
-    private function bookWithWallet(User $user, Tour $tour, int $spots, ?string $discountCode): Booking
+    private function bookWithWallet(User $user, Departure $departure, int $spots, ?string $discountCode): Booking
     {
-        return DB::transaction(function () use ($user, $tour, $spots, $discountCode) {
-            [$lockedTour, $quote] = $this->reserveSpots($user, $tour, $spots, $discountCode);
+        return DB::transaction(function () use ($user, $departure, $spots, $discountCode) {
+            [$lockedDeparture, $quote] = $this->reserveSpots($user, $departure, $spots, $discountCode);
 
-            $booking = $this->createBooking($user, $lockedTour, $quote, PaymentMethod::Wallet, BookingStatus::Confirmed);
+            $booking = $this->createBooking($user, $lockedDeparture, $quote, PaymentMethod::Wallet, BookingStatus::Confirmed);
 
             // A 100% discount leaves nothing to pay.
             if ($quote->totalCents > 0) {
@@ -77,17 +83,17 @@ final class BookingService
      *
      * Rule of thumb: never call another server while holding database locks.
      * The call may take seconds or time out, and every other booking for this
-     * tour would wait behind it. So the work is split in three steps:
+     * departure would wait behind it. So the work is split in three steps:
      *   1. short transaction: hold the spots with a `pending` booking
      *   2. no transaction:    charge the card
      *   3. short transaction: confirm the booking, or release the spots
      */
-    private function bookWithCard(User $user, Tour $tour, int $spots, ?string $discountCode): Booking
+    private function bookWithCard(User $user, Departure $departure, int $spots, ?string $discountCode): Booking
     {
-        $booking = DB::transaction(function () use ($user, $tour, $spots, $discountCode) {
-            [$lockedTour, $quote] = $this->reserveSpots($user, $tour, $spots, $discountCode);
+        $booking = DB::transaction(function () use ($user, $departure, $spots, $discountCode) {
+            [$lockedDeparture, $quote] = $this->reserveSpots($user, $departure, $spots, $discountCode);
 
-            return $this->createBooking($user, $lockedTour, $quote, PaymentMethod::Card, BookingStatus::Pending);
+            return $this->createBooking($user, $lockedDeparture, $quote, PaymentMethod::Card, BookingStatus::Pending);
         });
 
         if ($booking->total_cents === 0) {
@@ -120,7 +126,7 @@ final class BookingService
         return DB::transaction(function () use ($booking) {
             /** @var Booking $locked */
             $locked = Booking::query()->whereKey($booking->getKey())->lockForUpdate()->firstOrFail();
-            $locked->load('tour', 'user.wallet');
+            $locked->load('departure', 'user.wallet');
 
             if (! $locked->isCancellable()) {
                 throw BusinessRuleException::bookingNotCancellable();
@@ -217,21 +223,35 @@ final class BookingService
     }
 
     /**
-     * Locks the tour, checks it can take `$spots` more travelers, prices the
-     * booking and claims the spots (and the discount use).
+     * Locks the departure, checks it can take `$spots` more travelers, prices
+     * the booking and claims the spots (and the discount use).
      *
-     * Must be called inside a transaction, otherwise the lock is useless.
+     * Two locks, always in this order (one order everywhere means no
+     * deadlocks):
+     *   1. the tour, FOR SHARE: its status and price cannot change until we
+     *      commit (TourService::save() takes FOR UPDATE and waits), yet
+     *      bookings for *other* departures of the same tour do not block
+     *      each other;
+     *   2. the departure, FOR UPDATE: two bookings of the same date run one
+     *      after the other, so the second one sees the first one's spots.
      *
-     * @return array{0: Tour, 1: Quote}
+     * Must be called inside a transaction, otherwise the locks are useless.
+     * The returned departure has its `tour` relation set.
+     *
+     * @return array{0: Departure, 1: Quote}
      */
-    private function reserveSpots(User $user, Tour $tour, int $spots, ?string $discountCode): array
+    private function reserveSpots(User $user, Departure $departure, int $spots, ?string $discountCode): array
     {
-        /** @var Tour $locked */
-        $locked = Tour::query()->whereKey($tour->getKey())->lockForUpdate()->firstOrFail();
-        $locked->load('operator.operatorProfile');
+        /** @var Tour $tour */
+        $tour = Tour::query()->whereKey($departure->tour_id)->sharedLock()->firstOrFail();
+        $tour->load('operator.operatorProfile');
 
-        $bookable = $locked->status === TourStatus::Published
-            && $locked->operator->operatorProfile?->status === OperatorStatus::Approved
+        /** @var Departure $locked */
+        $locked = Departure::query()->whereKey($departure->getKey())->lockForUpdate()->firstOrFail();
+        $locked->setRelation('tour', $tour);
+
+        $bookable = $tour->status === TourStatus::Published
+            && $tour->operator->operatorProfile?->status === OperatorStatus::Approved
             && ! $locked->hasStarted();
 
         if (! $bookable) {
@@ -242,9 +262,9 @@ final class BookingService
             throw BusinessRuleException::notEnoughSpots($locked->available_spots);
         }
 
-        $quote = $this->pricing->quote($locked, $spots, $discountCode, $user, lockDiscount: true);
+        $quote = $this->pricing->quote($tour, $spots, $discountCode, $user, lockDiscount: true);
 
-        // increment() issues `UPDATE tours SET booked_spots = booked_spots + ?`.
+        // increment() issues `UPDATE departures SET booked_spots = booked_spots + ?`.
         // The CHECK constraint (booked_spots <= capacity) guards it as well.
         $locked->increment('booked_spots', $spots);
         $quote->discount?->increment('redemptions_count');
@@ -252,7 +272,7 @@ final class BookingService
         return [$locked, $quote];
     }
 
-    private function createBooking(User $user, Tour $tour, Quote $quote, PaymentMethod $method, BookingStatus $status): Booking
+    private function createBooking(User $user, Departure $departure, Quote $quote, PaymentMethod $method, BookingStatus $status): Booking
     {
         $booking = new Booking;
         $booking->forceFill([
@@ -267,7 +287,10 @@ final class BookingService
             'paid_at' => $status === BookingStatus::Confirmed ? now() : null,
         ]);
         $booking->user()->associate($user);
-        $booking->tour()->associate($tour);
+        // Both from the locked departure: the composite foreign key requires
+        // tour_id to be the departure's tour.
+        $booking->departure()->associate($departure);
+        $booking->tour()->associate($departure->tour);
         $booking->discount()->associate($quote->discount);
         $booking->save();
 
@@ -280,7 +303,7 @@ final class BookingService
      * The booking is locked and re-checked first. If the charge took longer
      * than the pending timeout, bookings:expire-pending may already have
      * marked it failed and given its spots to someone else. Confirming it
-     * then would overbook the tour. Instead the booking stays failed and,
+     * then would overbook the departure. Instead the booking stays failed and,
      * because we know the card was charged, the amount is credited to the
      * traveler's wallet (the same travel-credit policy as cancel()).
      *
@@ -333,7 +356,7 @@ final class BookingService
     private function releaseSpots(Booking $booking, BookingStatus $newStatus): void
     {
         DB::transaction(function () use ($booking, $newStatus) {
-            Tour::query()->whereKey($booking->tour_id)->lockForUpdate()->firstOrFail()
+            Departure::query()->whereKey($booking->departure_id)->lockForUpdate()->firstOrFail()
                 ->decrement('booked_spots', $booking->spots);
 
             if ($booking->discount_id !== null) {

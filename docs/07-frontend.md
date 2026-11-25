@@ -275,13 +275,24 @@ form, so card data never touches our code or servers.
 - **No `dangerouslySetInnerHTML`.** All text from users (tour descriptions,
   reviews, names) is rendered as text, which React escapes. Line breaks are
   kept with the CSS class `whitespace-pre-line`, not by injecting `<br>`.
-- **Display server-decided flags, don't re-derive them.** Tours carry
-  `available_spots` and `is_bookable` from the API. The card's "Sold out"
-  badge checks `available_spots === 0` (that is literally what "sold out"
-  means), while the detail and booking pages hide the book button on
-  `!is_bookable` (which also covers started or draft tours). Neither page
+- **Display server-decided flags, don't re-derive them.** Since Exercise 10
+  a tour runs on departures (dates), each with `available_spots` and
+  `is_bookable` from the API; the tour carries `upcoming_departures`,
+  `next_departure` and `is_sold_out` ("dates are coming, none has a spot").
+  The card's "Sold out" badge shows `is_sold_out`; the tour page lists every
+  upcoming date with a Book button only on `is_bookable` ones; the booking
+  page (`/tours/:id/departures/:departureId/book`) finds its departure among
+  the tour's upcoming ones and shows "Booking unavailable" otherwise. No page
   works out bookability from dates itself, and the API refuses a booking
-  anyway (`not_enough_spots`).
+  anyway (`tour_not_bookable`, `not_enough_spots`).
+- **Departures (operator).** `features/operator/DeparturesSection.tsx`, below
+  the form on the tour's edit page (a form cannot contain another form):
+  add one date or a weekly series ("repeat weekly for N weeks"), change a
+  date or group size inline, delete an unbooked date. A new tour goes
+  straight to its edit page to get its dates. Its hooks (`useTourDepartures`,
+  `useAddDepartures`, ...) invalidate the operator *and* public tour keys,
+  because a date changes the catalogue too. `features/tours/NextDeparture.tsx`
+  shows "next date + N more" in the operator and admin tour tables.
 - **Code splitting.** Operator and admin pages are `lazy` routes in
   `router.tsx`. Their code is a separate download that travelers never fetch.
 - **Page titles.** React 19 moves a `<title>` rendered anywhere into

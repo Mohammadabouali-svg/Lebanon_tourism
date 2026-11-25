@@ -79,7 +79,7 @@ final class TourService
         }
 
         $imagePath = $tour->image_path;
-        $tour->delete(); // itinerary items are removed by ON DELETE CASCADE
+        $tour->delete(); // itinerary items and (booking-free) departures go by ON DELETE CASCADE
         $this->images->delete($imagePath);
     }
 
@@ -91,16 +91,14 @@ final class TourService
         try {
             DB::transaction(function () use ($tour, $data, $newImagePath) {
                 if ($tour->exists) {
-                    // Lock so that no booking (and no admin moderation) slips in
-                    // between these checks and the save. The values checked are
-                    // read from the locked row, not from $tour, which was loaded
-                    // before the lock and may be stale.
+                    // Lock so that no admin moderation (and no booking, which
+                    // holds FOR SHARE on the tour while it reads the price and
+                    // status) slips in between this check and the save. The
+                    // values checked are read from the locked row, not from
+                    // $tour, which was loaded before the lock and may be stale.
+                    // Capacity is per departure now: DepartureService guards it.
                     $current = Tour::query()->whereKey($tour->getKey())->lockForUpdate()
-                        ->firstOrFail(['booked_spots', 'status', 'moderated_at']);
-
-                    if ($data['capacity'] < $current->booked_spots) {
-                        throw BusinessRuleException::capacityBelowBookings($current->booked_spots);
-                    }
+                        ->firstOrFail(['status', 'moderated_at']);
 
                     // The admin moderation lock (D19). Sending the current status
                     // again is allowed: the edit form always sends one.
@@ -130,7 +128,7 @@ final class TourService
             $this->images->delete($oldImagePath);
         }
 
-        // Read back columns the database computed (duration_days).
+        // Read back the saved row (timestamps, defaults set by the database).
         return $tour->refresh();
     }
 }

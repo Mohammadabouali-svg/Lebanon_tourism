@@ -14,6 +14,7 @@ the tests that prove it, and how it was verified.
 | 6 | Admin moderation lock | [06-moderation-lock.md](06-moderation-lock.md) |
 | 7 | Content-Security-Policy | [07-csp-header.md](07-csp-header.md) |
 | 8 | Review photos gallery | [08-review-photos.md](08-review-photos.md) |
+| 10 | Recurring departures | [10-recurring-departures.md](10-recurring-departures.md) |
 
 When an exercise is finished, add its write-up here with the same sections:
 **What was asked**, **Decisions**, **What was done**, **Tests**,

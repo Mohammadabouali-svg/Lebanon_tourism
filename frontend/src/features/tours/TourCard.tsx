@@ -8,12 +8,16 @@ import type { Tour } from '@/lib/types'
 import { TourImage } from './TourImage'
 
 export function TourCard({ tour }: { tour: Tour }) {
-  // "Sold out" means exactly "no spots left", so we test available_spots, not
-  // is_bookable: is_bookable is also false for draft or started tours, which
-  // are not sold out. (The public list only returns published upcoming tours,
-  // so on a card the two agree today; this keeps the label honest if that changes.)
-  const soldOut = tour.available_spots === 0
-  const fewSpotsLeft = !soldOut && tour.available_spots <= 5
+  // "Sold out" means exactly "no spots left on any upcoming date". The server
+  // decides it (is_sold_out); a tour without upcoming dates is not sold out,
+  // and the public list does not return it anyway.
+  const soldOut = tour.is_sold_out === true
+  const departures = tour.upcoming_departures ?? []
+  // The date shown is the first one a traveler can still book, so the date
+  // and the "spots left" next to it always talk about the same departure.
+  const shown = departures.find((departure) => departure.available_spots > 0) ?? tour.next_departure ?? null
+  const otherDates = Math.max(0, departures.length - 1)
+  const fewSpotsLeft = !soldOut && shown !== null && shown.available_spots <= 5
 
   return (
     <article className="group relative flex flex-col overflow-hidden rounded-xl border border-stone-200 bg-white shadow-sm transition-shadow hover:shadow-md">
@@ -39,7 +43,8 @@ export function TourCard({ tour }: { tour: Tour }) {
           </Link>
         </h3>
         <p className="mt-1 text-sm text-stone-500">
-          {formatDateRange(tour.starts_on, tour.ends_on)} · {tour.duration_days} day{tour.duration_days > 1 ? 's' : ''}
+          {shown ? formatDateRange(shown.starts_on, shown.ends_on) : 'No dates yet'} · {tour.duration_days} day{tour.duration_days > 1 ? 's' : ''}
+          {otherDates > 0 && <span className="block">+ {otherDates} more date{otherDates > 1 ? 's' : ''}</span>}
         </p>
         <StarRating value={tour.rating_average} count={tour.reviews_count} className="mt-2" />
         <div className="mt-auto flex items-end justify-between pt-4">
@@ -48,7 +53,7 @@ export function TourCard({ tour }: { tour: Tour }) {
             <span className="text-sm text-stone-500"> / person</span>
           </p>
           <p className={fewSpotsLeft ? 'text-sm font-medium text-amber-700' : 'text-sm text-stone-500'}>
-            {soldOut ? 'Sold out' : `${tour.available_spots} spots left`}
+            {soldOut ? 'Sold out' : shown ? `${shown.available_spots} spots left` : ''}
           </p>
         </div>
       </div>

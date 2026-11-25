@@ -57,16 +57,16 @@ export function OperatorDashboardPage() {
               <p className="text-sm text-stone-500">No published tours coming up.</p>
             ) : (
               <ul className="divide-y divide-stone-100">
-                {dashboard.data.upcoming_departures.map((tour) => {
-                  const percent = Math.round((tour.booked_spots / tour.capacity) * 100)
+                {dashboard.data.upcoming_departures.map(({ departure, tour }) => {
+                  const percent = Math.round((departure.booked_spots / departure.capacity) * 100)
                   return (
-                    <li key={tour.id} className="flex flex-wrap items-center justify-between gap-3 py-3">
+                    <li key={departure.id} className="flex flex-wrap items-center justify-between gap-3 py-3">
                       <div>
                         <Link to={`/operator/tours/${tour.id}/edit`} className="font-medium text-stone-900 hover:underline">{tour.title}</Link>
-                        <p className="text-sm text-stone-500">{formatDateRange(tour.starts_on, tour.ends_on)} · {tour.city?.name}</p>
+                        <p className="text-sm text-stone-500">{formatDateRange(departure.starts_on, departure.ends_on)} · {tour.city?.name}</p>
                       </div>
                       <div className="w-40">
-                        <p className="text-right text-xs text-stone-500">{tour.booked_spots} / {tour.capacity} booked</p>
+                        <p className="text-right text-xs text-stone-500">{departure.booked_spots} / {departure.capacity} booked</p>
                         <div className="mt-1 h-2 rounded-full bg-stone-100" role="progressbar" aria-valuenow={percent} aria-valuemin={0} aria-valuemax={100} aria-label={`${tour.title} occupancy`}>
                           <div className="h-2 rounded-full bg-brand-600" style={{ width: `${percent}%` }} />
                         </div>

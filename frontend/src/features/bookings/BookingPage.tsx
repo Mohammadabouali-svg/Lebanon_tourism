@@ -14,15 +14,20 @@ import { isStatus, parseApiError } from '@/lib/api'
 import { cn } from '@/lib/cn'
 import { formatDateRange } from '@/lib/dates'
 import { formatMoney } from '@/lib/money'
-import type { PaymentMethod, Tour } from '@/lib/types'
+import type { Departure, PaymentMethod, Tour } from '@/lib/types'
 import { NotFoundPage } from '@/pages/NotFoundPage'
 import { useCreateBooking, useQuote } from './queries'
 
 const MAX_SPOTS_PER_BOOKING = 20 // mirrors StoreBookingRequest (max:20)
 
+/*
+ * /tours/:id/departures/:departureId/book (Exercise 10). The departure is
+ * looked up among the tour's upcoming departures, which the public tour
+ * endpoint returns. A past or unknown departure is simply not in that list.
+ */
 export function BookingPage() {
-  const id = Number(useParams().id)
-  const tour = useTour(id)
+  const params = useParams()
+  const tour = useTour(Number(params.id))
 
   if (tour.isPending) return <PageSpinner />
   if (tour.isError) {
@@ -30,21 +35,26 @@ export function BookingPage() {
     return <Alert tone="error" className="m-6">{parseApiError(tour.error).message}</Alert>
   }
 
-  return <Checkout tour={tour.data} />
+  const departure = tour.data.upcoming_departures?.find((d) => d.id === Number(params.departureId)) ?? null
+
+  return <Checkout tour={tour.data} departure={departure} />
 }
 
-function Checkout({ tour }: { tour: Tour }) {
+function Checkout({ tour, departure }: { tour: Tour; departure: Departure | null }) {
   const navigate = useNavigate()
   const { user } = useCurrentUser()
   const [spots, setSpots] = useState(1)
   const [codeInput, setCodeInput] = useState('')
   const [appliedCode, setAppliedCode] = useState<string | null>(null)
   const [method, setMethod] = useState<PaymentMethod>('wallet')
-  const book = useCreateBooking(tour.id)
+  const bookable = departure !== null && departure.is_bookable
+  // Hooks run on every render, so they get id 0 when there is no departure;
+  // the quote is then disabled and the booking form is not shown.
+  const book = useCreateBooking(departure?.id ?? 0)
 
-  const maxSpots = Math.max(1, Math.min(tour.available_spots, MAX_SPOTS_PER_BOOKING))
+  const maxSpots = Math.max(1, Math.min(departure?.available_spots ?? 1, MAX_SPOTS_PER_BOOKING))
   const debouncedSpots = useDebouncedValue(spots, 300)
-  const quote = useQuote(tour.id, debouncedSpots, appliedCode, tour.is_bookable)
+  const quote = useQuote(departure?.id ?? 0, debouncedSpots, appliedCode, bookable)
 
   // An invalid code makes the whole quote fail with code "invalid_discount".
   const quoteError = quote.error ? parseApiError(quote.error) : null
@@ -65,11 +75,12 @@ function Checkout({ tour }: { tour: Tour }) {
     )
   }
 
-  if (!tour.is_bookable) {
+  // Written out (not `!bookable`) so TypeScript knows `departure` is set below.
+  if (departure === null || !departure.is_bookable) {
     return (
       <div className="mx-auto max-w-3xl px-4 py-10">
         <PageHeader title="Booking unavailable" />
-        <Alert tone="info">This tour is sold out or no longer open for booking.</Alert>
+        <Alert tone="info">This date is sold out or no longer open for booking.</Alert>
         <Link to={`/tours/${tour.id}`} className="mt-4 inline-block text-brand-700 hover:underline">Back to the tour</Link>
       </div>
     )
@@ -85,8 +96,8 @@ function Checkout({ tour }: { tour: Tour }) {
             <TourImage tour={tour} className="size-20 shrink-0 rounded-lg" />
             <div>
               <h2 className="font-semibold text-stone-900">{tour.title}</h2>
-              <p className="text-sm text-stone-500">{formatDateRange(tour.starts_on, tour.ends_on)} · {tour.city?.name}</p>
-              <p className="text-sm text-stone-500">{formatMoney(tour.price_cents)} per person · {tour.available_spots} spots left</p>
+              <p className="text-sm text-stone-500">{formatDateRange(departure.starts_on, departure.ends_on)} · {tour.city?.name}</p>
+              <p className="text-sm text-stone-500">{formatMoney(tour.price_cents)} per person · {departure.available_spots} spots left</p>
             </div>
           </Card>
 

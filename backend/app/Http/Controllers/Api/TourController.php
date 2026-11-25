@@ -28,10 +28,13 @@ class TourController extends Controller
 
         $tours = Tour::query()
             ->visibleToPublic()
+            // At least one departure that has not started (Exercise 10).
             ->upcoming()
-            // Eager loading: 4 queries in total, whatever the page size.
-            // Without with(), every tour would trigger 3 more queries ("N+1").
-            ->with(['city.region', 'category', 'operator.operatorProfile'])
+            // Eager loading: 5 queries in total, whatever the page size.
+            // Without with(), every tour would trigger 4 more queries ("N+1").
+            // A tour runs on a handful of upcoming dates, so loading them all
+            // for the card (next date, "N more dates", sold out) stays small.
+            ->with(['city.region', 'category', 'operator.operatorProfile', 'upcomingDepartures'])
             ->withAvg('reviews', 'rating')
             ->withCount('reviews')
             ->when($filters['search'] ?? null, function (Builder $query, string $term) {
@@ -58,7 +61,7 @@ class TourController extends Controller
             'price_asc' => $tours->orderBy('price_cents'),
             'price_desc' => $tours->orderByDesc('price_cents'),
             'rating' => $tours->orderByRaw('reviews_avg_rating DESC NULLS LAST'),
-            default => $tours->orderBy('starts_on'),
+            default => $tours->orderByNextDeparture(),
         };
 
         // A unique tie-breaker keeps pagination stable: without it, two tours
@@ -72,7 +75,7 @@ class TourController extends Controller
     {
         $tour = Tour::query()
             ->visibleToPublic()
-            ->with(['city.region', 'category', 'operator.operatorProfile', 'itineraryItems'])
+            ->with(['city.region', 'category', 'operator.operatorProfile', 'itineraryItems', 'upcomingDepartures'])
             ->withAvg('reviews', 'rating')
             ->withCount('reviews')
             ->findOrFail($tour);

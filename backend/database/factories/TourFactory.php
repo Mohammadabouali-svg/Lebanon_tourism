@@ -5,12 +5,19 @@ namespace Database\Factories;
 use App\Enums\TourStatus;
 use App\Models\Category;
 use App\Models\City;
+use App\Models\Departure;
 use App\Models\Tour;
 use App\Models\User;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
-/** @extends Factory<Tour> */
+/*
+| A tour has no date or capacity of its own (Exercise 10): add departures
+| with ->withDeparture() or Departure::factory()->for($tour). A tour without
+| an upcoming departure is not listed in the public catalogue.
+|
+| @extends Factory<Tour>
+*/
 class TourFactory extends Factory
 {
     /** @return array<string, mixed> */
@@ -24,13 +31,7 @@ class TourFactory extends Factory
             'description' => fake()->paragraphs(2, true),
             // Whole dollars between $25 and $500, stored in cents.
             'price_cents' => fake()->numberBetween(25, 500) * 100,
-            'capacity' => fake()->numberBetween(8, 30),
-            'booked_spots' => 0,
-            'starts_on' => CarbonImmutable::today()->addDays(fake()->numberBetween(7, 90))->toDateString(),
-            // Closure attributes can read other attributes of the same record.
-            'ends_on' => fn (array $attributes) => CarbonImmutable::parse($attributes['starts_on'])
-                ->addDays(fake()->numberBetween(0, 4))
-                ->toDateString(),
+            'duration_days' => fake()->numberBetween(1, 5),
             'status' => TourStatus::Published,
         ];
     }
@@ -49,12 +50,9 @@ class TourFactory extends Factory
         ]);
     }
 
-    /** A tour that started three days ago. */
-    public function started(): static
+    /** With one upcoming departure (or one with the given attributes). */
+    public function withDeparture(array $attributes = []): static
     {
-        return $this->state([
-            'starts_on' => CarbonImmutable::today()->subDays(3)->toDateString(),
-            'ends_on' => CarbonImmutable::today()->addDay()->toDateString(),
-        ]);
+        return $this->has(Departure::factory()->state($attributes), 'departures');
     }
 }

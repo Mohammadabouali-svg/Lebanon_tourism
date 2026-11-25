@@ -68,20 +68,29 @@ export interface ItineraryItem {
   description: string | null
 }
 
+/** One date a tour runs on, with its own capacity (DepartureResource, Exercise 10). */
+export interface Departure {
+  id: number
+  starts_on: string
+  ends_on: string
+  capacity: number
+  booked_spots: number
+  available_spots: number
+  /** A display hint; the server re-checks everything when booking. */
+  is_bookable: boolean
+  /** Operator list only. */
+  bookings_count?: number
+}
+
 export interface Tour {
   id: number
   title: string
   description: string
   meeting_point: string | null
   price_cents: number
-  capacity: number
-  booked_spots: number
-  available_spots: number
-  starts_on: string
-  ends_on: string
+  /** The length of every departure of the tour. */
   duration_days: number
   status: TourStatus
-  is_bookable: boolean
   /** Set while an admin's archive locks the status (D19); always null for published tours. */
   moderated_at: string | null
   image_url: string | null
@@ -89,6 +98,11 @@ export interface Tour {
   category?: Category
   operator?: { company_name: string | null }
   itinerary?: ItineraryItem[]
+  /** Soonest first; on the catalogue, the tour page and operator/admin lists. */
+  upcoming_departures?: Departure[]
+  next_departure?: Departure | null
+  /** Dates are coming but none has a free spot (the "Sold out" badge). */
+  is_sold_out?: boolean
   rating_average?: number | null
   reviews_count?: number
   bookings_count?: number
@@ -118,6 +132,7 @@ export interface Booking {
   cancelled_at: string | null
   created_at: string | null
   tour?: Tour
+  departure?: Departure
   traveler?: Traveler
 }
 
@@ -219,7 +234,7 @@ export interface OperatorDashboard {
   year: number
   years: number[]
   monthly: MonthlyPoint[]
-  upcoming_departures: Tour[]
+  upcoming_departures: { departure: Departure; tour: Tour }[]
 }
 
 export interface AdminDashboard {

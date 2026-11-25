@@ -26,9 +26,9 @@ class TourController extends Controller
         // Starting the query from the user's relation scopes it to their
         // tours: there is no way to accidentally list someone else's.
         $tours = $request->user()->tours()
-            ->with(['city.region', 'category'])
+            ->with(['city.region', 'category', 'upcomingDepartures'])
             ->withCount('bookings')
-            ->latest('starts_on')
+            ->latest('id')
             ->paginate(20);
 
         return TourResource::collection($tours);

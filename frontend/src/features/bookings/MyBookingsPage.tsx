@@ -64,7 +64,9 @@ function BookingCard({ booking }: { booking: Booking }) {
               ) : (
                 <span className="font-semibold">Tour</span>
               )}
-              {tour && <p className="text-sm text-stone-500">{formatDateRange(tour.starts_on, tour.ends_on)} · {tour.city?.name}</p>}
+              {booking.departure && (
+                <p className="text-sm text-stone-500">{formatDateRange(booking.departure.starts_on, booking.departure.ends_on)} · {tour?.city?.name}</p>
+              )}
             </div>
             <StatusBadge status={booking.status} />
           </div>

@@ -70,10 +70,12 @@ class DemoSeeder extends Seeder
         Discount::factory()->percent(5)->create(['code' => 'EXPIRED5', 'expires_at' => now()->subDay()]);
 
         // Bookings through the real service (so spots, wallet and ledger agree).
-        $this->bookings->book($maya, $tours['byblos'], 2, PaymentMethod::Wallet, 'WELCOME10');
-        $this->bookings->book($maya, $tours['qadisha'], 1, PaymentMethod::Wallet, null);
-        $this->bookings->book($karim, $tours['byblos'], 1, PaymentMethod::Card, null);
-        $this->bookings->book($karim, $tours['tripoli'], 3, PaymentMethod::Card, 'SUMMER25');
+        // Each booking is for the tour's first departure.
+        $first = fn (string $key) => $tours[$key]->departures()->firstOrFail();
+        $this->bookings->book($maya, $first('byblos'), 2, PaymentMethod::Wallet, 'WELCOME10');
+        $this->bookings->book($maya, $first('qadisha'), 1, PaymentMethod::Wallet, null);
+        $this->bookings->book($karim, $first('byblos'), 1, PaymentMethod::Card, null);
+        $this->bookings->book($karim, $first('tripoli'), 3, PaymentMethod::Card, 'SUMMER25');
 
         $this->review($maya, $tours['byblos'], 5, 'Our guide brought every layer of the old city to life, from the Crusader castle to the Phoenician temples. Unforgettable.');
         $this->review($karim, $tours['byblos'], 4, 'Great day out. The fish lunch by the old harbour was a highlight. A bit rushed at the end.');
@@ -152,15 +154,20 @@ class DemoSeeder extends Seeder
                     .'Bring comfortable shoes, a water bottle and a sense of curiosity.',
                 'meeting_point' => $meetingPoints[$key] ?? null,
                 'price_cents' => $price,
-                'capacity' => $capacity,
-                'starts_on' => $start->toDateString(),
-                'ends_on' => $start->addDays($days - 1)->toDateString(),
+                'duration_days' => $days,
                 'status' => TourStatus::Published,
             ]);
 
             $tour->itineraryItems()->createMany(array_map(
                 fn (array $item) => ['day' => $item[0], 'title' => $item[1], 'description' => $item[2]],
                 $itinerary,
+            ));
+
+            // The same tour four weeks in a row (Exercise 10): a weekly series,
+            // as an operator enters it with "repeat for 4 weeks".
+            $tour->departures()->createMany(array_map(
+                fn (int $week) => ['starts_on' => $start->addWeeks($week)->toDateString(), 'capacity' => $capacity],
+                range(0, 3),
             ));
 
             $tours[$key] = $tour;

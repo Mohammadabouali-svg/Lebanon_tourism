@@ -83,8 +83,9 @@ Route::middleware(['auth:sanctum', 'active'])->group(function () {
 
     Route::middleware(['verified', 'role:traveler'])->group(function () {
         Route::get('bookings', [BookingController::class, 'index']);
-        Route::post('tours/{tour}/quote', [BookingController::class, 'quote'])->middleware('throttle:quotes');
-        Route::post('tours/{tour}/bookings', [BookingController::class, 'store'])->middleware('throttle:bookings');
+        // A booking is for one departure (date) of a tour (Exercise 10, D23).
+        Route::post('departures/{departure}/quote', [BookingController::class, 'quote'])->middleware('throttle:quotes');
+        Route::post('departures/{departure}/bookings', [BookingController::class, 'store'])->middleware('throttle:bookings');
         Route::post('bookings/{booking}/cancel', [BookingController::class, 'cancel']);
         Route::post('tours/{tour}/reviews', [ReviewController::class, 'store'])->middleware('throttle:uploads');
     });
@@ -107,6 +108,12 @@ Route::middleware(['auth:sanctum', 'active'])->group(function () {
             // POST + `_method=PUT`, because the body is multipart/form-data (see TourRequest).
             Route::put('tours/{tour}', [Operator\TourController::class, 'update'])->middleware('throttle:uploads');
             Route::delete('tours/{tour}', [Operator\TourController::class, 'destroy']);
+
+            // The dates a tour runs on (Exercise 10, D23). Ownership: TourPolicy / DeparturePolicy.
+            Route::get('tours/{tour}/departures', [Operator\DepartureController::class, 'index']);
+            Route::post('tours/{tour}/departures', [Operator\DepartureController::class, 'store']);
+            Route::put('departures/{departure}', [Operator\DepartureController::class, 'update']);
+            Route::delete('departures/{departure}', [Operator\DepartureController::class, 'destroy']);
         });
 
     // --- Administrators ------------------------------------------------------

@@ -5,6 +5,33 @@ All the code for this chapter is in three files:
 [`PricingService`](../backend/app/Services/PricingService.php) and
 [`WalletService`](../backend/app/Services/WalletService.php).
 
+## Tours, departures and bookings (Exercise 10)
+
+A **tour** is the product: title, itinerary, price, length in days. A
+**departure** is one date it runs on, with its own group size (`capacity`) and
+`booked_spots` counter: the same tour can run every Saturday. A traveler
+books a departure; the booking keeps both `departure_id` and (denormalised,
+guarded by a composite foreign key) `tour_id`. The price stays on the tour,
+and each booking snapshots it. See [D23](decisions.md) for why, and chapter
+04 for how the existing data was moved.
+
+Operators manage departures on the tour's edit page:
+
+| Endpoint (operator group) | Rule |
+|---|---|
+| `GET /api/operator/tours/{tour}/departures` | all dates of my tour, with booking counts |
+| `POST /api/operator/tours/{tour}/departures` | `starts_on` (after today), `capacity` (1–500), optional `weeks` (1–26): a weekly series, all or nothing; a taken date → 422 on `starts_on` |
+| `PUT /api/operator/departures/{departure}` | new date and/or capacity. Capacity below the booked spots → `capacity_below_bookings`; moving a departure that has any booking (even cancelled) → `departure_has_bookings`; a started departure → `departure_started` |
+| `DELETE /api/operator/departures/{departure}` | refused with `departure_has_bookings` if it has any booking, `departure_started` if it started |
+
+Ownership is `TourPolicy::update` on the departure's tour (`DeparturePolicy`
+delegates to it). For create and update the check is in the Form Request's
+`authorize()`, which runs *before* validation: otherwise the "date already
+taken" error would tell any operator which dates another operator's tour
+runs on. `DepartureService` checks bookings under `FOR UPDATE` on the
+departure, the lock a booking takes before counting spots, so a capacity
+change and a booking of the same date never interleave.
+
 ## Rule number one: the server decides the price
 
 The original booking page put the price in a hidden form field and the server
@@ -29,7 +56,7 @@ Instead of computing it in JavaScript (which would duplicate the rules and
 drift apart), it asks the server:
 
 ```
-POST /api/tours/12/quote   {"spots": 2, "discount_code": "WELCOME10"}
+POST /api/departures/31/quote   {"spots": 2, "discount_code": "WELCOME10"}
 → {"data": {"unit_price_cents": 6500, "subtotal_cents": 13000,
             "discount_cents": 1300, "total_cents": 11700, ...}}
 ```
@@ -58,12 +85,13 @@ sequenceDiagram
     participant C as BookingController
     participant S as BookingService
     participant DB as Postgres
-    C->>S: book(user, tour, 2, wallet, "WELCOME10")
+    C->>S: book(user, departure, 2, wallet, "WELCOME10")
     S->>DB: BEGIN
-    S->>DB: SELECT tour FOR UPDATE
-    S->>S: bookable? enough spots?
+    S->>DB: SELECT tour FOR SHARE
+    S->>DB: SELECT departure FOR UPDATE
+    S->>S: tour published, operator approved, departure not started? enough spots?
     S->>DB: SELECT discount FOR UPDATE (via PricingService)
-    S->>DB: UPDATE tours SET booked_spots = booked_spots + 2
+    S->>DB: UPDATE departures SET booked_spots = booked_spots + 2
     S->>DB: INSERT booking (confirmed)
     S->>DB: SELECT wallet FOR UPDATE, UPDATE balance, INSERT ledger row
     S->>DB: COMMIT
@@ -93,15 +121,15 @@ GROUP BY w.id;
 ## Booking with a card
 
 Card payments involve someone else's server, which can be slow or
-unavailable. Holding the tour lock while waiting would block every other
-traveler trying to book that tour. So the flow has three short steps:
+unavailable. Holding the departure lock while waiting would block every other
+traveler trying to book that date. So the flow has three short steps:
 
 ```mermaid
 sequenceDiagram
     participant S as BookingService
     participant DB as Postgres
     participant G as PaymentGateway
-    S->>DB: transaction 1: lock tour, check, hold spots, booking = pending
+    S->>DB: transaction 1: lock tour (share) and departure, check, hold spots, booking = pending
     S->>G: charge(total)  (no transaction open)
     alt approved
         S->>DB: transaction 2: lock booking; still pending → confirmed, store payment reference
@@ -152,8 +180,8 @@ webhook (Exercise 9) is what settles that case. See
 
 ## Cancelling
 
-Travelers can cancel a confirmed booking until the tour starts. In one
-transaction: the spots go back to the tour, the discount use is returned, the
+Travelers can cancel a confirmed booking until its departure starts. In one
+transaction: the spots go back to the departure, the discount use is returned, the
 booking becomes `cancelled`, and the full amount is credited to the
 traveler's **wallet** as travel credit, whatever the original payment method.
 

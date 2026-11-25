@@ -51,14 +51,20 @@ class Booking extends Model
         return $this->belongsTo(Tour::class);
     }
 
+    /** The date booked (Exercise 10). tour_id is kept too and always matches it (D23). */
+    public function departure(): BelongsTo
+    {
+        return $this->belongsTo(Departure::class);
+    }
+
     public function discount(): BelongsTo
     {
         return $this->belongsTo(Discount::class);
     }
 
-    /** Travelers may cancel a confirmed booking until the tour starts. */
+    /** Travelers may cancel a confirmed booking until its departure starts. */
     public function isCancellable(): bool
     {
-        return $this->status === BookingStatus::Confirmed && ! $this->tour->hasStarted();
+        return $this->status === BookingStatus::Confirmed && ! $this->departure->hasStarted();
     }
 }

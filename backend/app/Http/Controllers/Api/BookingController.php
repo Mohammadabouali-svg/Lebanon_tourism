@@ -8,6 +8,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\StoreBookingRequest;
 use App\Http\Resources\BookingResource;
 use App\Models\Booking;
+use App\Models\Departure;
 use App\Models\Tour;
 use App\Notifications\BookingConfirmedNotification;
 use App\Services\BookingService;
@@ -28,11 +29,14 @@ class BookingController extends Controller
         private readonly PricingService $pricing,
     ) {}
 
+    /** What every booking response shows: the tour, the departure (with its tour, for ends_on) and the code. */
+    private const RELATIONS = ['tour.city', 'tour.category', 'departure.tour', 'discount'];
+
     /** The logged-in traveler's bookings, newest first. */
     public function index(Request $request): AnonymousResourceCollection
     {
         $bookings = $request->user()->bookings()
-            ->with(['tour.city', 'tour.category', 'discount'])
+            ->with(self::RELATIONS)
             ->latest('id')
             ->paginate(20);
 
@@ -40,15 +44,17 @@ class BookingController extends Controller
     }
 
     /*
-    | POST /api/tours/{tour}/quote: the exact price the server would charge.
+    | POST /api/departures/{departure}/quote: the exact price the server
+    | would charge.
     |
     | The checkout page calls this whenever the traveler changes the number
     | of spots or the discount code. The browser never calculates prices.
     */
-    public function quote(Request $request, Tour $tour): JsonResponse
+    public function quote(Request $request, Departure $departure): JsonResponse
     {
         // Draft tours of other operators must not leak their prices.
-        abort_unless(Tour::query()->visibleToPublic()->whereKey($tour->getKey())->exists(), 404);
+        $tour = Tour::query()->visibleToPublic()->find($departure->tour_id);
+        abort_if($tour === null, 404);
 
         // Two fields only, so inline validation instead of a Form Request class.
         $data = $request->validate([
@@ -60,15 +66,19 @@ class BookingController extends Controller
 
         return response()->json(['data' => [
             ...$quote->toArray(),
-            'available_spots' => $tour->available_spots,
+            'available_spots' => $departure->available_spots,
         ]]);
     }
 
-    public function store(StoreBookingRequest $request, Tour $tour): JsonResponse
+    /*
+    | POST /api/departures/{departure}/bookings. The tour is not in the URL:
+    | it is the departure's tour, so a client cannot send a mismatching pair.
+    */
+    public function store(StoreBookingRequest $request, Departure $departure): JsonResponse
     {
         $booking = $this->bookings->book(
             user: $request->user(),
-            tour: $tour,
+            departure: $departure,
             spots: $request->integer('spots'),
             method: PaymentMethod::from($request->validated('payment_method')),
             discountCode: $request->validated('discount_code'),
@@ -79,7 +89,7 @@ class BookingController extends Controller
             $request->user()->notify(new BookingConfirmedNotification($booking));
         }
 
-        return BookingResource::make($booking->load(['tour.city', 'tour.category', 'discount']))
+        return BookingResource::make($booking->load(self::RELATIONS))
             ->response()
             ->setStatusCode(201);
     }
@@ -90,6 +100,6 @@ class BookingController extends Controller
 
         $booking = $this->bookings->cancel($booking);
 
-        return BookingResource::make($booking->load(['tour.city', 'tour.category', 'discount']));
+        return BookingResource::make($booking->load(self::RELATIONS));
     }
 }

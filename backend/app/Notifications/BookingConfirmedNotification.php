@@ -29,13 +29,13 @@ class BookingConfirmedNotification extends Notification implements ShouldQueue
 
     public function toMail(User $notifiable): MailMessage
     {
-        $booking = $this->booking->loadMissing('tour');
+        $booking = $this->booking->loadMissing('tour', 'departure');
 
         return (new MailMessage)
             ->subject("Booking {$booking->reference} confirmed")
             ->greeting("Thank you, {$notifiable->name}!")
             ->line("Your booking for \"{$booking->tour->title}\" is confirmed.")
-            ->line("Departure: {$booking->tour->starts_on->toFormattedDayDateString()}")
+            ->line("Departure: {$booking->departure->starts_on->toFormattedDayDateString()}")
             ->line("Travelers: {$booking->spots}")
             ->line('Total paid: '.Money::format($booking->total_cents))
             ->action('View my bookings', config('app.frontend_url').'/bookings');

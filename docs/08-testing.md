@@ -49,8 +49,11 @@ The tests use their own database, `lebanon_tourism_test` (see
 ```php
 $traveler = User::factory()->withBalance(50_000)->create();
 $operator = User::factory()->operator(OperatorStatus::Pending)->create();
-$tour     = Tour::factory()->for($operator, 'operator')->create(['capacity' => 3]);
+$tour     = Tour::factory()->for($operator, 'operator')->withDeparture()->create();
 $draft    = Tour::factory()->draft()->create();
+// Dates and spots live on departures (Exercise 10):
+$full     = Departure::factory()->for($tour)->create(['capacity' => 3, 'booked_spots' => 3]);
+$past     = Departure::factory()->started()->create();
 ```
 
 **`actingAs($user)`** logs a user in for the following requests.
@@ -87,17 +90,17 @@ public function test_insufficient_wallet_balance_changes_nothing(): void
 {
     // Arrange: the situation
     $traveler = $this->traveler(balanceCents: 5_000);
-    $tour = Tour::factory()->create(['price_cents' => 12_000]);
+    $departure = Departure::factory()->for(Tour::factory()->state(['price_cents' => 12_000]))->create();
 
     // Act: one request
     $this->actingAs($traveler)
-        ->postJson("/api/tours/{$tour->id}/bookings", ['spots' => 1, 'payment_method' => 'wallet'])
+        ->postJson("/api/departures/{$departure->id}/bookings", ['spots' => 1, 'payment_method' => 'wallet'])
         // Assert: the response...
         ->assertUnprocessable()
         ->assertJsonPath('code', 'insufficient_funds');
 
     // ...and the state of the world afterwards
-    $this->assertSame(0, $tour->fresh()->booked_spots);
+    $this->assertSame(0, $departure->fresh()->booked_spots);
     $this->assertSame(5_000, $traveler->wallet->fresh()->balance_cents);
 }
 ```

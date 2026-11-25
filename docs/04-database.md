@@ -14,7 +14,9 @@ erDiagram
     cities ||--o{ tours : "takes place in"
     categories ||--o{ tours : classifies
     tours ||--o{ itinerary_items : "day by day"
-    tours ||--o{ bookings : receives
+    tours ||--o{ departures : "runs on"
+    departures ||--o{ bookings : "booked for"
+    tours ||--o{ bookings : "receives (denormalised)"
     tours ||--o{ reviews : receives
     reviews ||--o{ review_photos : "up to 3"
     discounts ||--o{ bookings : "applied to"
@@ -43,7 +45,10 @@ else: bugs, race conditions, a script someone runs by hand next year.
 | Constraint | Guarantees |
 |---|---|
 | `wallets_balance_not_negative` | a wallet can never go below $0 |
-| `tours_no_overbooking` (`booked_spots <= capacity`) | a tour can never be overbooked |
+| `departures_no_overbooking` (`booked_spots <= capacity`) + `departures_booked_spots_not_negative` (`booked_spots >= 0`) | a departure (one date of a tour) can never be overbooked, and a double release of spots cannot go below zero. Laravel's `unsignedSmallInteger` is a plain signed `smallint` in Postgres, so only the CHECK stops negatives (Exercise 10, D23) |
+| `departures_one_per_day` unique `(tour_id, starts_on)` | a tour runs at most once per day |
+| `bookings_departure_of_tour_foreign`: FK `bookings (departure_id, tour_id)` → `departures (id, tour_id)` | a booking's denormalised `tour_id` is always the tour of its departure (D23) |
+| `tours_duration_range` (`duration_days BETWEEN 1 AND 30`) | every departure's end date (`starts_on + duration_days − 1`) is on or after its start |
 | `tours_moderated_means_archived` (`moderated_at IS NULL OR status = 'archived'`) | a tour an admin locked stays archived until an admin reinstates it (Exercise 6, D19) |
 | `users_pending_email_differs` (`pending_email IS NULL OR pending_email <> email`) | a pending e-mail change is always to a *different* address (Exercise 4, D20). `pending_email` has deliberately **no** unique index, so nobody can block an address by "reserving" it; uniqueness is enforced on `email` at swap time |
 | `bookings_totals_consistent` | `subtotal = unit price × spots` and `total = subtotal − discount` |
@@ -55,22 +60,32 @@ else: bugs, race conditions, a script someone runs by hand next year.
 | `restrictOnDelete` foreign keys | a city with tours, a user with bookings... cannot be deleted |
 
 There is a test proving the overbooking constraint works even when PHP is
-bypassed: `BookingTest::test_the_database_itself_refuses_overbooking`.
+bypassed: `DepartureDataModelTest::test_the_database_refuses_overbooking_a_departure`.
 
 Laravel has no schema-builder method for `CHECK` constraints, so the
 migrations use `DB::statement('ALTER TABLE ... ADD CONSTRAINT ...')`. That is
 normal; not everything needs an abstraction.
 
-### A generated column
+### The tour's length: from a generated column to a plain one
+
+Until Exercise 10, `duration_days` was a *generated* column:
 
 ```php
 $table->integer('duration_days')->storedAs('ends_on - starts_on + 1');
 ```
 
-Postgres computes the duration from the two dates. It cannot disagree with
-them, and the duration filter can use it directly. (The original stored a
-duration by hand, displayed it as "hours" on one page and "days" on another,
-and filtered it with gaps between the ranges.)
+Postgres computed it from the tour's two dates, so it could not disagree
+with them. (The original stored a duration by hand, displayed it as "hours"
+on one page and "days" on another, and filtered it with gaps between the
+ranges.)
+
+Since Exercise 10 a tour has no dates of its own: it runs on departures. The
+length is now entered by the operator and is the length of *every*
+departure: a departure stores only `starts_on`, and its end date is computed
+as `starts_on + duration_days − 1`. The migration turned the generated column
+into a plain one with `ALTER COLUMN duration_days DROP EXPRESSION`, which keeps
+every value. One length per tour is what keeps the itinerary ("Day 3: ...")
+true for every date.
 
 ## Money
 
@@ -92,7 +107,7 @@ A transaction groups several writes into one all-or-nothing unit:
 
 ```php
 DB::transaction(function () {
-    // 1. add 2 to tours.booked_spots
+    // 1. add 2 to departures.booked_spots
     // 2. insert the booking
     // 3. take $130 from the wallet   ← throws "insufficient funds"
 });
@@ -117,13 +132,22 @@ UPDATE booked_spots = 10           UPDATE booked_spots = 10
 The fix is a **row lock**:
 
 ```php
-$tour = Tour::query()->whereKey($id)->lockForUpdate()->first();
+$departure = Departure::query()->whereKey($id)->lockForUpdate()->first();
 // SQL: SELECT ... FOR UPDATE
 ```
 
 The second request waits at that line until the first transaction commits,
 then reads `booked_spots = 10` and is refused. The same pattern protects
 wallet balances (`WalletService`) and discount redemption counters.
+
+Since Exercise 10 the counter lives on the **departure** (one date), not the
+tour. `BookingService` takes two locks, always in the same order: the tour
+`FOR SHARE` (its price and status cannot change until we commit, yet bookings
+for *other* dates of the same tour don't wait for each other), then the
+departure `FOR UPDATE`. One lock order everywhere means no deadlocks.
+`BookingTest::test_the_departure_row_is_locked_before_its_spots_are_counted`
+checks the query log for both locks and their order; PHPUnit cannot send two
+truly parallel requests inside `RefreshDatabase`'s single transaction.
 
 Rules of thumb:
 
@@ -154,7 +178,9 @@ you notice immediately.
 than loading every booking into PHP.
 
 **Indexes** exist for the columns used in `WHERE` and `ORDER BY` of frequent
-queries (e.g. `tours (status, starts_on)` for the public listing). Foreign
+queries (e.g. `departures (tour_id, starts_on)`, the unique index that also
+answers "does this tour have an upcoming date?" and "when is its next date?"
+for the public listing). Foreign
 keys are indexed by `foreignId()->constrained()`.
 
 ## Strict mode and model defaults: a lesson from building this project
@@ -180,8 +206,9 @@ protected $attributes = [
 ];
 ```
 
-Columns *computed* by the database (like `duration_days`) cannot be known in
-advance, so `TourService` calls `$tour->refresh()` after saving.
+Columns *computed* by the database (like `duration_days` was before Exercise
+10) cannot be known in advance, so `TourService` calls `$tour->refresh()` after
+saving.
 
 ## Changing the schema
 
@@ -210,3 +237,34 @@ public function down(): void
 
 Then `make migrate`. Add the column to the model's `#[Fillable]`, the Form
 Request rules, the Resource, the frontend type, and a test.
+
+## Moving data between tables: expand, migrate, contract (Exercise 10)
+
+Adding a column is easy. *Moving* data is not: dates, capacity and the spot
+counter moved from `tours` to a new `departures` table, and every booking had
+to be attached to a departure. The plan was written before any code
+([D23](decisions.md)), in three migrations:
+
+| Step | Migration | What it does | `down()` |
+|---|---|---|---|
+| Expand | `2026_11_26_000100_create_departures_table` | new table with its constraints; nothing reads it yet | drops it |
+| Migrate | `2026_11_26_000200_move_bookings_to_departures` | one `INSERT ... SELECT`: each tour becomes one departure (a tour had exactly one date, so nothing is guessed); `bookings.departure_id` added nullable, filled with one `UPDATE ... FROM`, then made `NOT NULL`; composite FK | copies date, capacity and counter back to the tours, drops the column, deletes the departures |
+| Contract | `2026_11_26_000300_drop_dates_and_capacity_from_tours` | `duration_days` becomes a plain column; `capacity`, `booked_spots`, `starts_on`, `ends_on` dropped | restores them from each tour's departure |
+
+Things worth noticing:
+
+- **Inside the database.** The copies are single SQL statements: no row
+  passes through PHP, and Postgres runs DDL in the migration's transaction,
+  so a migration applies completely or not at all.
+- **Nullable, backfill, then NOT NULL.** A NOT NULL column without a default
+  cannot be added to a table that already has rows.
+- **A rollback that refuses.** The old shape holds one date per tour. Once a
+  tour has several departures (or none), `down()` would have to drop or
+  invent data, so it throws instead, naming the tours. A rollback is either
+  exact or does not happen.
+- **One release or two.** In a zero-downtime deploy the contract step ships
+  one release later, once no running code reads the old columns. Here code
+  and migrations deploy together, so all three run at once.
+- **Tested both ways.** `DepartureDataModelTest` rolls the migrations back
+  inside the test transaction, inserts rows in the *old* shape with plain SQL,
+  runs them forward and checks rows in and out, then checks each `down()`.

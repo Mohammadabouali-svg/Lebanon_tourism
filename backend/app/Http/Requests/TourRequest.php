@@ -3,7 +3,6 @@
 namespace App\Http\Requests;
 
 use App\Enums\TourStatus;
-use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\Validator;
@@ -20,8 +19,6 @@ class TourRequest extends FormRequest
     /** @return array<string, mixed> */
     public function rules(): array
     {
-        $creating = $this->route('tour') === null;
-
         return [
             'title' => ['required', 'string', 'max:150'],
             'description' => ['required', 'string', 'max:5000'],
@@ -32,11 +29,10 @@ class TourRequest extends FormRequest
             // $1.00 to $10,000.00 (inclusive). The cap is a business limit
             // (docs/decisions.md D17), so it lives here and not in a DB CHECK.
             'price_cents' => ['required', 'integer', 'min:100', 'max:1000000'],
-            'capacity' => ['required', 'integer', 'min:1', 'max:500'],
-            // New tours must start in the future. An existing tour keeps its
-            // (possibly past) date when other fields are edited.
-            'starts_on' => ['required', 'date_format:Y-m-d', ...($creating ? ['after:today'] : [])],
-            'ends_on' => ['required', 'date_format:Y-m-d', 'after_or_equal:starts_on'],
+            // The length of every departure (Exercise 10). Dates and capacity
+            // are per departure: StoreDepartureRequest / UpdateDepartureRequest.
+            // 1..30 is also a CHECK (tours_duration_range).
+            'duration_days' => ['required', 'integer', 'min:1', 'max:30'],
             'status' => ['required', Rule::enum(TourStatus::class)],
             // `image` + `mimes` look at the file *content*, not its name.
             // SVG is excluded on purpose: SVG files can contain JavaScript.
@@ -61,8 +57,7 @@ class TourRequest extends FormRequest
                     return;
                 }
 
-                $days = (int) CarbonImmutable::parse($this->input('starts_on'))
-                    ->diffInDays(CarbonImmutable::parse($this->input('ends_on'))) + 1;
+                $days = (int) $this->input('duration_days');
 
                 foreach ($this->input('itinerary', []) as $index => $item) {
                     if ((int) $item['day'] > $days) {
@@ -94,6 +89,7 @@ class TourRequest extends FormRequest
             'itinerary.*.title' => 'itinerary title',
             'price_cents' => 'price',
             'meeting_point' => 'meeting point',
+            'duration_days' => 'length in days',
         ];
     }
 }

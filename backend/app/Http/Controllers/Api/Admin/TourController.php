@@ -30,7 +30,7 @@ class TourController extends Controller
         ]);
 
         $tours = Tour::query()
-            ->with(['city.region', 'category', 'operator.operatorProfile'])
+            ->with(['city.region', 'category', 'operator.operatorProfile', 'upcomingDepartures'])
             ->withCount('bookings')
             ->when($filters['status'] ?? null, fn (Builder $query, string $status) => $query->where('status', $status))
             ->when($filters['search'] ?? null, fn (Builder $query, string $term) => $query->whereLike('title', Search::containsPattern($term)))

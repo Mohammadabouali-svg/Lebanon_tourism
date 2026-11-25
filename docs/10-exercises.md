@@ -30,7 +30,9 @@ frontend.
 when `available_spots === 0`, image muted); the detail and booking pages
 already hid the book button on `!is_bookable`. Two tests in
 `TourCatalogTest` pin the API behaviour the badge relies on. Write-up:
-[exercises/03-sold-out-badge.md](exercises/03-sold-out-badge.md).
+[exercises/03-sold-out-badge.md](exercises/03-sold-out-badge.md). Since
+Exercise 10 spots are per departure: the badge shows the tour's
+`is_sold_out` (no upcoming departure has a spot).
 
 ## Intermediate
 
@@ -110,6 +112,14 @@ operators run the same tour every Saturday. Introduce a `departures` table
 (tour, date, capacity, booked_spots) and move booking and capacity there.
 This is a real data-model refactoring: plan the migration of existing data
 before writing code.
+
+*Implemented:* a `departures` table (date, capacity, `booked_spots`; the
+length stays on the tour) and three migrations, expand → migrate → contract
+(`2026_11_26_000100` / `000200` / `000300`); booking and quote moved to
+`POST /api/departures/{departure}/...`; operators add single dates or a weekly
+series on the tour's edit page. See [D23](decisions.md), chapters
+[04](04-database.md) and [05](05-bookings-and-payments.md), and the write-up
+[exercises/10-recurring-departures.md](exercises/10-recurring-departures.md).
 
 **11. Faster search.** `ILIKE '%term%'` cannot use a normal index, so it
 gets slow with many tours. Try Postgres' `pg_trgm` extension with a GIN

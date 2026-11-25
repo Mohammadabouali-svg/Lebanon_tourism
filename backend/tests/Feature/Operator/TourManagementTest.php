@@ -6,9 +6,11 @@ use App\Enums\TourStatus;
 use App\Models\Booking;
 use App\Models\Category;
 use App\Models\City;
+use App\Models\Departure;
 use App\Models\Tour;
 use App\Models\User;
 use Carbon\CarbonImmutable;
+use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
@@ -30,17 +32,14 @@ class TourManagementTest extends TestCase
     /** @return array<string, mixed> */
     private function validPayload(array $overrides = []): array
     {
-        $start = CarbonImmutable::today()->addDays(20);
-
+        // No dates or capacity: those belong to departures (Exercise 10).
         return array_merge([
             'title' => 'Qadisha Valley Trek',
             'description' => 'Three days through the Holy Valley.',
             'city_id' => City::factory()->create()->id,
             'category_id' => Category::factory()->create()->id,
             'price_cents' => 14_000,
-            'capacity' => 12,
-            'starts_on' => $start->toDateString(),
-            'ends_on' => $start->addDays(2)->toDateString(),
+            'duration_days' => 3,
             'status' => 'published',
             'itinerary' => [
                 ['day' => 1, 'title' => 'Descent', 'description' => 'Down to the monastery.'],
@@ -175,16 +174,76 @@ class TourManagementTest extends TestCase
             ->assertJsonValidationErrors('image');
     }
 
-    public function test_capacity_cannot_drop_below_the_spots_already_booked(): void
+    /*
+    | "Capacity cannot drop below the spots already booked" moved with the
+    | capacity to departures: DepartureManagementTest covers it.
+    */
+
+    public function test_the_tour_length_is_required_and_between_1_and_30_days(): void
     {
-        $tour = Tour::factory()->for($this->operator, 'operator')->create(['capacity' => 10, 'booked_spots' => 6]);
+        $this->actingAs($this->operator);
+
+        foreach ([null, 0, 31] as $days) {
+            $this->postJson('/api/operator/tours', $this->validPayload(['duration_days' => $days, 'itinerary' => [['day' => 1, 'title' => 'Start']]]))
+                ->assertUnprocessable()
+                ->assertJsonValidationErrors('duration_days');
+        }
+
+        $this->assertDatabaseCount('tours', 0);
+    }
+
+    public function test_the_database_refuses_a_tour_without_a_positive_length(): void
+    {
+        // An end date is computed from it: zero days would end before the start.
+        $tour = Tour::factory()->create();
+
+        $this->expectException(QueryException::class);
+        $tour->forceFill(['duration_days' => 0])->save();
+    }
+
+    public function test_dates_and_capacity_sent_with_the_tour_are_ignored(): void
+    {
+        // A new tour has no departures yet; they are added separately.
+        $this->actingAs($this->operator)
+            ->postJson('/api/operator/tours', $this->validPayload([
+                'capacity' => 12,
+                'starts_on' => CarbonImmutable::today()->addDays(20)->toDateString(),
+            ]))
+            ->assertCreated()
+            ->assertJsonPath('data.duration_days', 3);
+
+        $this->assertSame(0, Departure::count());
+    }
+
+    public function test_the_operators_tour_list_shows_each_tours_next_departure(): void
+    {
+        $tour = Tour::factory()->for($this->operator, 'operator')->create();
+        $next = Departure::factory()->for($tour)->create(['starts_on' => CarbonImmutable::today()->addDays(3)->toDateString()]);
+        Departure::factory()->for($tour)->create(['starts_on' => CarbonImmutable::today()->addDays(10)->toDateString()]);
 
         $this->actingAs($this->operator)
-            ->putJson("/api/operator/tours/{$tour->id}", $this->validPayload(['capacity' => 5]))
-            ->assertUnprocessable()
-            ->assertJsonPath('code', 'capacity_below_bookings');
+            ->getJson('/api/operator/tours')
+            ->assertOk()
+            ->assertJsonPath('data.0.next_departure.id', $next->id)
+            ->assertJsonCount(2, 'data.0.upcoming_departures');
+    }
 
-        $this->assertSame(10, $tour->fresh()->capacity);
+    public function test_the_operator_dashboard_lists_upcoming_departures_with_their_tour(): void
+    {
+        $tour = Tour::factory()->for($this->operator, 'operator')->create(['title' => 'Mine']);
+        $soon = Departure::factory()->for($tour)->create(['starts_on' => CarbonImmutable::today()->addDays(2)->toDateString(), 'capacity' => 10, 'booked_spots' => 3]);
+        Departure::factory()->for($tour)->create(['starts_on' => CarbonImmutable::today()->addDays(9)->toDateString()]);
+        Departure::factory()->for($tour)->started()->create();
+        Departure::factory()->for(Tour::factory()->draft()->for($this->operator, 'operator'))->create();
+        Departure::factory()->create(); // another operator's
+
+        $this->actingAs($this->operator)
+            ->getJson('/api/operator/dashboard')
+            ->assertOk()
+            ->assertJsonCount(2, 'data.upcoming_departures')
+            ->assertJsonPath('data.upcoming_departures.0.departure.id', $soon->id)
+            ->assertJsonPath('data.upcoming_departures.0.departure.booked_spots', 3)
+            ->assertJsonPath('data.upcoming_departures.0.tour.title', 'Mine');
     }
 
     // --- Admin moderation lock (Exercise 6, D19) ------------------------------

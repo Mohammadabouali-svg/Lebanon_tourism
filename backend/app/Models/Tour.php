@@ -15,28 +15,27 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Facades\Storage;
 
 /*
+| Since Exercise 10 a tour has no date and no capacity of its own: it runs on
+| departures (Departure), each with its date, capacity and booked_spots
+| counter (docs/decisions.md D23). `duration_days` is the length of every
+| departure of the tour.
+|
 | Not fillable on purpose:
 |   operator_id  - always the logged-in operator, set by the controller
-|   booked_spots - only BookingService changes it, inside a transaction
 |   image_path   - set after the uploaded file was processed
 |   moderated_at - the admin moderation lock, only TourService::moderate()
 |                  sets or clears it (docs/decisions.md D19)
 */
 #[Fillable([
     'title', 'description', 'meeting_point', 'city_id', 'category_id', 'price_cents',
-    'capacity', 'starts_on', 'ends_on', 'status',
+    'duration_days', 'status',
 ])]
 class Tour extends Model
 {
     use HasFactory;
 
-    /*
-    | In-memory defaults, mirroring the database (see User::$attributes).
-    | `duration_days` is computed by Postgres, so TourService refreshes the
-    | model after saving to read it back.
-    */
+    /** In-memory defaults, mirroring the database (see User::$attributes). */
     protected $attributes = [
-        'booked_spots' => 0,
         'status' => 'draft',
         'image_path' => null,
         'meeting_point' => null,
@@ -47,11 +46,7 @@ class Tour extends Model
     {
         return [
             'status' => TourStatus::class,
-            'starts_on' => 'immutable_date',
-            'ends_on' => 'immutable_date',
             'price_cents' => 'integer',
-            'capacity' => 'integer',
-            'booked_spots' => 'integer',
             'duration_days' => 'integer',
             'moderated_at' => 'immutable_datetime',
         ];
@@ -79,6 +74,22 @@ class Tour extends Model
         return $this->hasMany(ItineraryItem::class)->orderBy('day')->orderBy('id');
     }
 
+    /*
+    | chaperone() sets each departure's `tour` relation to this tour when the
+    | departures are loaded through it, so Departure::$ends_on (which needs
+    | the tour's duration) works without one extra query per departure.
+    */
+    public function departures(): HasMany
+    {
+        return $this->hasMany(Departure::class)->orderBy('starts_on')->chaperone();
+    }
+
+    /** Departures that have not started yet, soonest first (catalogue, booking pages). */
+    public function upcomingDepartures(): HasMany
+    {
+        return $this->departures()->upcoming();
+    }
+
     public function bookings(): HasMany
     {
         return $this->hasMany(Booking::class);
@@ -103,28 +114,35 @@ class Tour extends Model
             });
     }
 
+    /** Tours with at least one departure that has not started yet. */
     #[Scope]
     protected function upcoming(Builder $query): void
     {
-        $query->whereDate('starts_on', '>', today());
+        $query->whereHas('departures', fn (Builder $departures) => $departures->upcoming());
+    }
+
+    /*
+    | Soonest next departure first. A correlated subquery per tour,
+    | MIN(starts_on) of its upcoming departures, answered from the
+    | departures_one_per_day (tour_id, starts_on) index.
+    */
+    #[Scope]
+    protected function orderByNextDeparture(Builder $query): void
+    {
+        $query->orderBy(
+            Departure::query()
+                ->selectRaw('MIN(starts_on)')
+                ->whereColumn('departures.tour_id', 'tours.id')
+                ->upcoming()
+        );
     }
 
     // --- Computed attributes ------------------------------------------------
-
-    protected function availableSpots(): Attribute
-    {
-        return Attribute::get(fn () => $this->capacity - $this->booked_spots);
-    }
 
     protected function imageUrl(): Attribute
     {
         return Attribute::get(fn () => $this->image_path
             ? Storage::disk('public')->url($this->image_path)
             : null);
-    }
-
-    public function hasStarted(): bool
-    {
-        return ! $this->starts_on->isFuture();
     }
 }

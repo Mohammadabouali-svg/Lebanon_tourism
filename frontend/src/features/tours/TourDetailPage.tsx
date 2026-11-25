@@ -7,9 +7,9 @@ import { DocumentTitle } from '@/components/ui/PageHeader'
 import { PageSpinner } from '@/components/ui/Spinner'
 import { useCurrentUser } from '@/features/auth/hooks'
 import { isStatus, parseApiError } from '@/lib/api'
-import { formatDateRange } from '@/lib/dates'
+import { formatDate, formatDateRange } from '@/lib/dates'
 import { formatMoney } from '@/lib/money'
-import type { ItineraryItem, Tour, User } from '@/lib/types'
+import type { Departure, ItineraryItem, Tour, User } from '@/lib/types'
 import { NotFoundPage } from '@/pages/NotFoundPage'
 import { ReviewsSection } from './ReviewsSection'
 import { TourImage } from './TourImage'
@@ -51,10 +51,10 @@ export function TourDetailPage() {
           </div>
 
           <dl className="mt-6 grid grid-cols-2 gap-4 rounded-xl border border-stone-200 bg-white p-4 text-sm sm:grid-cols-4">
-            <Fact label="Dates" value={formatDateRange(t.starts_on, t.ends_on)} />
+            <Fact label="Next date" value={t.next_departure ? formatDate(t.next_departure.starts_on) : 'None planned'} />
             <Fact label="Duration" value={`${t.duration_days} day${t.duration_days > 1 ? 's' : ''}`} />
-            <Fact label="Group size" value={`Up to ${t.capacity}`} />
-            <Fact label="Spots left" value={String(t.available_spots)} />
+            <Fact label="Upcoming dates" value={String(t.upcoming_departures?.length ?? 0)} />
+            <Fact label="Price" value={`${formatMoney(t.price_cents)} / person`} />
           </dl>
 
           {/* Outside the 4-column grid above: a meeting point is often a full sentence. */}
@@ -119,9 +119,13 @@ function Itinerary({ items }: { items: ItineraryItem[] }) {
   )
 }
 
-/** The sticky price box. What it offers depends on who is looking. */
+/**
+ * The sticky box: one row per upcoming departure (Exercise 10). What each
+ * row offers depends on who is looking; the server re-checks everything.
+ */
 function BookingBox({ tour }: { tour: Tour }) {
   const { user } = useCurrentUser()
+  const departures = tour.upcoming_departures ?? []
 
   return (
     <Card className="sticky top-6 p-5">
@@ -129,24 +133,51 @@ function BookingBox({ tour }: { tour: Tour }) {
         <span className="text-2xl font-semibold text-stone-900">{formatMoney(tour.price_cents)}</span>
         <span className="text-sm text-stone-500"> / person</span>
       </p>
-      <p className="mt-1 text-sm text-stone-500">
-        {tour.available_spots === 0 ? 'Sold out' : `${tour.available_spots} of ${tour.capacity} spots available`}
-      </p>
-      <div className="mt-5">
-        <BookingAction tour={tour} user={user} />
-      </div>
+      <h2 className="mt-4 text-sm font-semibold text-stone-900">Choose a date</h2>
+      {departures.length === 0 ? (
+        <Alert tone="info" className="mt-2">No upcoming dates for this tour yet.</Alert>
+      ) : (
+        <>
+          <ul className="mt-2 divide-y divide-stone-100">
+            {departures.map((departure) => (
+              <li key={departure.id} className="flex items-center justify-between gap-3 py-2.5">
+                <div className="text-sm">
+                  <p className="font-medium text-stone-900">{formatDateRange(departure.starts_on, departure.ends_on)}</p>
+                  <p className={departure.available_spots === 0 ? 'text-red-700' : 'text-stone-500'}>
+                    {departure.available_spots === 0 ? 'Sold out' : `${departure.available_spots} of ${departure.capacity} spots left`}
+                  </p>
+                </div>
+                {departure.is_bookable && user?.role === 'traveler' && user.email_verified && (
+                  <ButtonLink to={bookingPath(tour, departure)} size="sm">
+                    Book
+                  </ButtonLink>
+                )}
+              </li>
+            ))}
+          </ul>
+          <div className="mt-3">
+            <BookingHint tour={tour} departures={departures} user={user} />
+          </div>
+        </>
+      )}
       <p className="mt-4 text-xs text-stone-500">Free cancellation until the day before departure, refunded as travel credit.</p>
     </Card>
   )
 }
 
-function BookingAction({ tour, user }: { tour: Tour; user: User | null }) {
-  if (!tour.is_bookable) {
-    return <Alert tone="info">{tour.available_spots === 0 ? 'This tour is fully booked.' : 'This tour is not open for booking.'}</Alert>
+function bookingPath(tour: Tour, departure: Departure): string {
+  return `/tours/${tour.id}/departures/${departure.id}/book`
+}
+
+/** Explains why there is no Book button, when there is none. */
+function BookingHint({ tour, departures, user }: { tour: Tour; departures: Departure[]; user: User | null }) {
+  const firstBookable = departures.find((departure) => departure.is_bookable)
+  if (!firstBookable) {
+    return <Alert tone="info">All upcoming dates are fully booked.</Alert>
   }
   if (!user) {
     return (
-      <ButtonLink to={`/login?redirect=${encodeURIComponent(`/tours/${tour.id}/book`)}`} className="w-full">
+      <ButtonLink to={`/login?redirect=${encodeURIComponent(`/tours/${tour.id}`)}`} className="w-full">
         Log in to book
       </ButtonLink>
     )
@@ -157,9 +188,5 @@ function BookingAction({ tour, user }: { tour: Tour; user: User | null }) {
   if (!user.email_verified) {
     return <Alert tone="warning">Confirm your e-mail address to book this tour.</Alert>
   }
-  return (
-    <ButtonLink to={`/tours/${tour.id}/book`} className="w-full">
-      Book this tour
-    </ButtonLink>
-  )
+  return null
 }

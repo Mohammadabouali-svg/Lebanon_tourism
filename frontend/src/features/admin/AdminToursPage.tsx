@@ -9,7 +9,8 @@ import { PageSpinner } from '@/components/ui/Spinner'
 import { TBody, THead, Table, Td, Th, Tr } from '@/components/ui/Table'
 import { useQueryFilters } from '@/hooks/useQueryFilters'
 import { parseApiError } from '@/lib/api'
-import { formatDateRange, formatDateTime } from '@/lib/dates'
+import { NextDeparture } from '@/features/tours/NextDeparture'
+import { formatDateTime } from '@/lib/dates'
 import { formatMoney } from '@/lib/money'
 import type { TourStatus } from '@/lib/types'
 import { SearchInput } from './SearchInput'
@@ -47,7 +48,7 @@ export function AdminToursPage() {
         <>
           <Table>
             <THead>
-              <tr><Th>Tour</Th><Th>Operator</Th><Th>Dates</Th><Th className="text-right">Price</Th><Th className="text-right">Bookings</Th><Th>Status</Th></tr>
+              <tr><Th>Tour</Th><Th>Operator</Th><Th>Next date</Th><Th className="text-right">Price</Th><Th className="text-right">Bookings</Th><Th>Status</Th></tr>
             </THead>
             <TBody>
               {tours.data.data.map((tour) => (
@@ -61,7 +62,7 @@ export function AdminToursPage() {
                     <span className="block text-xs text-stone-500">{tour.city?.name} · {tour.category?.name}</span>
                   </Td>
                   <Td>{tour.operator?.company_name}</Td>
-                  <Td className="whitespace-nowrap">{formatDateRange(tour.starts_on, tour.ends_on)}</Td>
+                  <Td className="whitespace-nowrap"><NextDeparture tour={tour} /></Td>
                   <Td className="text-right">{formatMoney(tour.price_cents)}</Td>
                   <Td className="text-right">{tour.bookings_count ?? 0}</Td>
                   <Td>

@@ -7,7 +7,7 @@ import type { Booking, Envelope, Paginated, PaymentMethod, Quote } from '@/lib/t
 export const bookingKeys = {
   all: ['bookings'] as const,
   mine: (page: number) => ['bookings', 'mine', page] as const,
-  quote: (tourId: number, spots: number, code: string | null) => ['bookings', 'quote', tourId, spots, code] as const,
+  quote: (departureId: number, spots: number, code: string | null) => ['bookings', 'quote', departureId, spots, code] as const,
 }
 
 export function useMyBookings(page: number) {
@@ -29,11 +29,11 @@ export function useMyBookings(page: number) {
  * It is a POST (it needs the user's identity to check "already used" codes),
  * but it changes nothing, so it is safe to use as a query.
  */
-export function useQuote(tourId: number, spots: number, discountCode: string | null, enabled: boolean) {
+export function useQuote(departureId: number, spots: number, discountCode: string | null, enabled: boolean) {
   return useQuery({
-    queryKey: bookingKeys.quote(tourId, spots, discountCode),
+    queryKey: bookingKeys.quote(departureId, spots, discountCode),
     queryFn: async () =>
-      (await api.post<Envelope<Quote>>(`/tours/${tourId}/quote`, { spots, discount_code: discountCode })).data.data,
+      (await api.post<Envelope<Quote>>(`/departures/${departureId}/quote`, { spots, discount_code: discountCode })).data.data,
     enabled,
     placeholderData: keepPreviousData,
     staleTime: 0,
@@ -46,13 +46,15 @@ export interface CreateBookingPayload {
   discount_code: string | null
 }
 
-export function useCreateBooking(tourId: number) {
+/** A booking is for one departure (date) of a tour (Exercise 10). */
+export function useCreateBooking(departureId: number) {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: async (payload: CreateBookingPayload) =>
-      (await api.post<Envelope<Booking>>(`/tours/${tourId}/bookings`, payload)).data.data,
+      (await api.post<Envelope<Booking>>(`/departures/${departureId}/bookings`, payload)).data.data,
     onSuccess: () => {
-      // A booking changes: my bookings, the tour's free spots, my wallet balance.
+      // A booking changes: my bookings, the departure's free spots (shown with
+      // its tour), my wallet balance.
       void queryClient.invalidateQueries({ queryKey: bookingKeys.all })
       void queryClient.invalidateQueries({ queryKey: tourKeys.all })
       void queryClient.invalidateQueries({ queryKey: userKey })

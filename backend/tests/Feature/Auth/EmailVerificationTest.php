@@ -2,7 +2,7 @@
 
 namespace Tests\Feature\Auth;
 
-use App\Models\Tour;
+use App\Models\Departure;
 use App\Models\User;
 use App\Notifications\VerifyEmailNotification;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -50,10 +50,12 @@ class EmailVerificationTest extends TestCase
     public function test_an_unverified_traveler_cannot_book(): void
     {
         $user = User::factory()->unverified()->create();
-        $tour = Tour::factory()->create();
+        $departure = Departure::factory()->create();
 
         $this->actingAs($user)
-            ->postJson("/api/tours/{$tour->id}/bookings", ['spots' => 1, 'payment_method' => 'wallet'])
+            ->postJson("/api/departures/{$departure->id}/bookings", ['spots' => 1, 'payment_method' => 'wallet'])
             ->assertForbidden();
+
+        $this->assertSame(0, $departure->fresh()->booked_spots);
     }
 }

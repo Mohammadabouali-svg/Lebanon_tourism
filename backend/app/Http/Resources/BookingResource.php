@@ -23,11 +23,13 @@ class BookingResource extends JsonResource
             'discount_code' => $this->whenLoaded('discount', fn () => $this->discount?->code),
             'payment_method' => $this->payment_method,
             'status' => $this->status,
-            'can_cancel' => $this->whenLoaded('tour', fn () => $this->isCancellable()),
+            'can_cancel' => $this->whenLoaded('departure', fn () => $this->isCancellable()),
             'paid_at' => $this->paid_at?->toIso8601String(),
             'cancelled_at' => $this->cancelled_at?->toIso8601String(),
             'created_at' => $this->created_at?->toIso8601String(),
             'tour' => TourResource::make($this->whenLoaded('tour')),
+            // The date booked (Exercise 10). Needs `departure.tour` loaded (see DepartureResource).
+            'departure' => DepartureResource::make($this->whenLoaded('departure')),
             // Operators and admins see who booked; travelers only see their own bookings anyway.
             'traveler' => $this->whenLoaded('user', fn () => [
                 'id' => $this->user->id,

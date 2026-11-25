@@ -15,7 +15,7 @@ code and, where possible, to a test proving the fix.
 | 5 | **Price taken from the browser**, negative spots accepted | Book for $0, or *gain* wallet money | Server-side pricing ([`PricingService`](../backend/app/Services/PricingService.php)), `spots` validated 1–20, DB constraints on totals | `BookingTest::test_the_price_sent_by_the_client_is_ignored`, `…zero_or_negative_spots_are_rejected` |
 | 6 | **Stored XSS** in the admin booking view (`innerHTML` with the traveler's name) | A traveler named `<img onerror=…>` runs script as the admin | React escapes every value it renders; `dangerouslySetInnerHTML` is never used; data is returned raw as JSON | `ReviewTest::test_reviews_show_a_short_author_name_and_the_raw_comment_text` |
 | 7 | **Reflected XSS**: `$_GET['id']` printed into JavaScript | A crafted link runs script for whoever clicks it | No server-rendered HTML at all; route parameters are validated as numbers (`whereNumber`) | n/a by design |
-| 8 | **Race conditions** on wallet and spots (read, compute, write back) | Two parallel requests spend the same money / take the same last spot | Row locks inside transactions + `CHECK` constraints | `BookingTest::test_the_database_itself_refuses_overbooking` |
+| 8 | **Race conditions** on wallet and spots (read, compute, write back) | Two parallel requests spend the same money / take the same last spot | Row locks inside transactions + `CHECK` constraints | `DepartureDataModelTest::test_the_database_refuses_overbooking_a_departure`, `BookingTest::test_the_departure_row_is_locked_before_its_spots_are_counted` |
 
 ## The rest
 

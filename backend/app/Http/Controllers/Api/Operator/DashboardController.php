@@ -4,8 +4,11 @@ namespace App\Http\Controllers\Api\Operator;
 
 use App\Enums\TourStatus;
 use App\Http\Controllers\Controller;
+use App\Http\Resources\DepartureResource;
 use App\Http\Resources\TourResource;
+use App\Models\Departure;
 use App\Queries\BookingStats;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -26,11 +29,15 @@ class DashboardController extends Controller
             ->groupBy('status')
             ->pluck('total', 'status');
 
-        $upcoming = $operator->tours()
-            ->where('status', TourStatus::Published)
+        // The next five dates of the operator's published tours (Exercise 10).
+        $upcoming = Departure::query()
             ->upcoming()
-            ->with('city')
+            ->whereHas('tour', fn (Builder $tour) => $tour
+                ->where('operator_id', $operator->id)
+                ->where('status', TourStatus::Published))
+            ->with('tour.city')
             ->orderBy('starts_on')
+            ->orderBy('id')
             ->limit(5)
             ->get();
 
@@ -44,7 +51,12 @@ class DashboardController extends Controller
             'year' => $year,
             'years' => $stats->years(),
             'monthly' => $stats->monthly($year),
-            'upcoming_departures' => TourResource::collection($upcoming),
+            // Each date with its tour, side by side: DepartureResource does not
+            // embed its tour (see TourResource).
+            'upcoming_departures' => $upcoming->map(fn (Departure $departure) => [
+                'departure' => DepartureResource::make($departure),
+                'tour' => TourResource::make($departure->tour),
+            ]),
         ]]);
     }
 }

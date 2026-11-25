@@ -53,7 +53,7 @@ backend/
 
 ## One request, layer by layer
 
-Follow `POST /api/tours/12/bookings` with body
+Follow `POST /api/departures/31/bookings` (departure 31 = one date of a tour) with body
 `{"spots": 2, "payment_method": "wallet", "discount_code": "WELCOME10"}`.
 
 **1. nginx** (`docker/nginx/dev.conf`) hands the request to PHP's single entry
@@ -78,7 +78,7 @@ A forged request from another website fails here with **419**.
 | `role:traveler`: is the user a traveler? | 403 |
 | `throttle:bookings`: at most 10 per minute | 429 |
 
-**5. Route model binding** turns `{tour}` = `12` into a `Tour` model (404 if
+**5. Route model binding** turns `{departure}` = `31` into a `Departure` model (404 if
 it does not exist). It runs *after* the role checks (see the priority list in
 `bootstrap/app.php`), so a forbidden user never learns which ids exist.
 
@@ -91,9 +91,10 @@ the rules (like a sneaky `price_cents`) never reach the controller.
 calls `BookingService::book()` and turns the result into JSON. No rules here.
 
 **8. Service** [`BookingService`](../backend/app/Services/BookingService.php)
-opens a transaction, locks the tour row, checks it is bookable and has
+opens a transaction, locks the tour row (`FOR SHARE`) and the departure row
+(`FOR UPDATE`), checks the tour is bookable, the date has not started and has
 2 free spots, asks `PricingService` for the price (database price × spots −
-discount), increments the spot counter, creates the booking and debits the
+discount), increments the departure's spot counter, creates the booking and debits the
 wallet through `WalletService`. A broken rule throws
 `BusinessRuleException` → **422** with a `code` such as `not_enough_spots`,
 and the transaction rolls everything back.

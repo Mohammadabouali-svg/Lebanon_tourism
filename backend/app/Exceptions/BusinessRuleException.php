@@ -26,15 +26,15 @@ class BusinessRuleException extends RuntimeException implements ShouldntReport
 
     public static function tourNotBookable(): self
     {
-        return new self('This tour is not open for booking.', 'tour_not_bookable');
+        return new self('This departure is not open for booking.', 'tour_not_bookable');
     }
 
     public static function notEnoughSpots(int $available): self
     {
         return new self(
             $available === 0
-                ? 'This tour is sold out.'
-                : "Only {$available} spot(s) left on this tour.",
+                ? 'This departure is sold out.'
+                : "Only {$available} spot(s) left on this departure.",
             'not_enough_spots',
         );
     }
@@ -71,6 +71,21 @@ class BusinessRuleException extends RuntimeException implements ShouldntReport
     public static function capacityBelowBookings(int $booked): self
     {
         return new self("Capacity cannot be lower than the {$booked} spot(s) already booked.", 'capacity_below_bookings');
+    }
+
+    /*
+    | Departures (Exercise 10, D23). A departure with bookings keeps its date
+    | (travelers booked that date) and cannot be deleted (its bookings, even
+    | cancelled ones, are financial history and must keep their date).
+    */
+    public static function departureHasBookings(string $action): self
+    {
+        return new self("This departure has bookings, so you cannot {$action}.", 'departure_has_bookings');
+    }
+
+    public static function departureStarted(): self
+    {
+        return new self('This departure has already started and can no longer be changed.', 'departure_started');
     }
 
     public static function tourHasBookings(): self

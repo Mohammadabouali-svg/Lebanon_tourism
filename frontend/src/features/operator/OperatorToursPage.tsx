@@ -11,7 +11,7 @@ import { PageSpinner } from '@/components/ui/Spinner'
 import { TBody, THead, Table, Td, Th, Tr } from '@/components/ui/Table'
 import { useFlash } from '@/hooks/useFlash'
 import { parseApiError } from '@/lib/api'
-import { formatDateRange } from '@/lib/dates'
+import { NextDeparture } from '@/features/tours/NextDeparture'
 import { formatMoney } from '@/lib/money'
 import type { Tour } from '@/lib/types'
 import { useDeleteTour, useOperatorTours } from './queries'
@@ -40,10 +40,10 @@ export function OperatorToursPage() {
             <THead>
               <tr>
                 <Th>Tour</Th>
-                <Th>Dates</Th>
+                <Th>Next date</Th>
                 <Th>Status</Th>
                 <Th className="text-right">Price</Th>
-                <Th className="text-right">Booked</Th>
+                <Th className="text-right">Bookings</Th>
                 <Th><span className="sr-only">Actions</span></Th>
               </tr>
             </THead>
@@ -54,7 +54,7 @@ export function OperatorToursPage() {
                     <span className="font-medium text-stone-900">{tour.title}</span>
                     <span className="block text-xs text-stone-500">{tour.city?.name} · {tour.category?.name}</span>
                   </Td>
-                  <Td className="whitespace-nowrap">{formatDateRange(tour.starts_on, tour.ends_on)}</Td>
+                  <Td className="whitespace-nowrap"><NextDeparture tour={tour} /></Td>
                   <Td>
                     <div className="flex flex-wrap items-center gap-1">
                       <StatusBadge status={tour.status} />
@@ -62,7 +62,7 @@ export function OperatorToursPage() {
                     </div>
                   </Td>
                   <Td className="text-right">{formatMoney(tour.price_cents)}</Td>
-                  <Td className="whitespace-nowrap text-right">{tour.booked_spots} / {tour.capacity}</Td>
+                  <Td className="whitespace-nowrap text-right">{tour.bookings_count ?? 0}</Td>
                   <Td>
                     <div className="flex justify-end gap-2">
                       {tour.status === 'published' && (
