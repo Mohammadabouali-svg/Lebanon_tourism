@@ -6,6 +6,7 @@ use App\Http\Controllers\Api\Auth\PasswordResetController;
 use App\Http\Controllers\Api\Auth\RegistrationController;
 use App\Http\Controllers\Api\Auth\SessionController;
 use App\Http\Controllers\Api\BookingController;
+use App\Http\Controllers\Api\EmailChangeController;
 use App\Http\Controllers\Api\Operator;
 use App\Http\Controllers\Api\ProfileController;
 use App\Http\Controllers\Api\ReferenceDataController;
@@ -55,6 +56,13 @@ Route::post('email/verify/{id}/{hash}', [EmailVerificationController::class, 've
     ->whereNumber('id')
     ->name('verification.verify');
 
+// The link mailed to a NEW address (Exercise 4, D20). Same reasoning as
+// above: works logged in or not; the signature proves the inbox.
+Route::post('email/change/{id}/{hash}', [EmailChangeController::class, 'confirm'])
+    ->middleware(['signed:relative', 'throttle:auth'])
+    ->whereNumber('id')
+    ->name('email-change.confirm');
+
 // --- Any logged-in user ------------------------------------------------------
 
 Route::middleware(['auth:sanctum', 'active'])->group(function () {
@@ -65,6 +73,10 @@ Route::middleware(['auth:sanctum', 'active'])->group(function () {
     Route::get('user', [ProfileController::class, 'show']);
     Route::put('user/profile', [ProfileController::class, 'update']);
     Route::put('user/password', [ProfileController::class, 'updatePassword']);
+    // Not behind `verified`: a user who mistyped their address at sign-up
+    // must be able to fix it. Throttled because each request sends an e-mail.
+    Route::post('user/email-change', [EmailChangeController::class, 'store'])->middleware('throttle:6,1');
+    Route::delete('user/email-change', [EmailChangeController::class, 'destroy']);
     Route::get('user/wallet', [ProfileController::class, 'wallet']);
 
     // --- Travelers -----------------------------------------------------------

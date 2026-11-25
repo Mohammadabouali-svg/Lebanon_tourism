@@ -173,7 +173,8 @@ that production uses.
 ## D16. What was deliberately left out
 
 To keep the project teachable, some things are listed as exercises instead of
-being built: e-mail address change with re-verification, cleanup of stale
+being built: e-mail address change with re-verification (since built in
+Exercise 4, see D20), cleanup of stale
 `pending` card bookings (since built in Exercise 5, see D18), a real Stripe
 driver, recurring departures, full-text search, admin "lock" on moderated
 tours (since built in Exercise 6, see D19). See [10-exercises.md](10-exercises.md).
@@ -314,3 +315,65 @@ logic in a policy). Locking on every admin status change plus an unlock
 endpoint (a new route and button for a case the exercise does not need). A
 lock independent of the status (most flexible, most to build, and no
 constraint could state its meaning).
+
+## D20. E-mail change: a pending column, verified before the swap
+
+**Context.** Exercise 4 lets users change their e-mail address. Changing it
+directly would be dangerous: a typo locks the user out (login, password
+reset and every notification use the address), and an attacker holding a
+stolen session could move the account to their own inbox and then reset the
+password. `email` is fillable (sign-up needs it), so adding it to
+`UpdateProfileRequest` would have changed it instantly.
+
+**Decision.**
+- **One nullable `users.pending_email` column**, not fillable, lower-cased by
+  a mutator, written only by `EmailChangeService`. A new request overwrites
+  it, which also invalidates every older link. A **CHECK
+  `users_pending_email_differs`** states that a pending address differs from
+  the current one. There is **no unique index** on `pending_email`.
+- **Requesting** (`POST /api/user/email-change`) requires the **current
+  password** (as for a password change) and is throttled to 6 per minute. The
+  Form Request refuses the current address and a taken one with ordinary 422
+  field errors.
+- **The link** reuses the verification design: a relative temporary signed
+  route (60 minutes), the hash of the *pending* address, a React page that
+  calls `POST /api/email/change/{id}/{hash}`, no login needed.
+- **The swap** (`EmailChangeService::confirm()`) runs in one transaction under
+  a row lock: the hash must match the address pending now (403 otherwise),
+  the address must still be free (`BusinessRuleException::emailTaken()`,
+  code `email_taken`, with the unique index on `email` as the backstop), then
+  `email` = new, `pending_email` = null, `email_verified_at` = now, and the
+  old address's password reset tokens are deleted. After the commit, the
+  **old address is notified**.
+- Sessions are left alone; `DELETE /api/user/email-change` cancels.
+
+**Why.** Verifying before swapping is the exercise's point: the account keeps
+a working address at every moment. The password re-check means a stolen
+session is not enough; the notice to the old address warns the owner if the
+password was stolen too. A unique index on `pending_email` would let anyone
+*block* an address by requesting it first, so uniqueness is enforced where it
+matters: on `email`, at the swap. Refusing a taken address at request time
+leaks nothing new (the public sign-up form already answers "taken") and is
+behind login, password and a rate limit. The reset-token cleanup closes a
+real hole: the tokens are keyed by e-mail, so a token for the old address
+would otherwise reset the password of whoever signs up with that address
+next. The rules are in a service (§5) because they need the row lock and the
+re-check at swap time; the Form Request only shapes input.
+
+**Consequences.** `UserResource` gains `pending_email` (additive, backward
+compatible). A user who requests A, cancels, and requests A again within the
+hour makes the first link valid again. It only ever reaches the same inbox,
+for the same address, so this is accepted. The old-address notice has no
+"undo" link; a user who did not make the change must contact support. A
+suspended user's link still works if they were suspended after requesting
+(the request itself needs `active`); a possible follow-up.
+
+**Rejected.** An `email_changes` table (history and several open requests:
+nothing needs them; Exercise 12's audit log is the place for history).
+Swapping immediately and verifying afterwards (the typo/lock-out problem the
+exercise describes). Notifying the old address at request time (earlier, but
+without a cancel link in that e-mail it cannot stop anything). Ending all
+sessions at the swap (would log out the real owner as easily as an attacker,
+and the password did not change). Removing `email` from `#[Fillable]` (sign-up
+and admin creation set it legitimately; it would touch code outside this
+exercise. A possible separate clean-up).

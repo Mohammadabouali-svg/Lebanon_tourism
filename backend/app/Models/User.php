@@ -25,6 +25,11 @@ use Illuminate\Notifications\Notifiable;
 | `"role": "admin"` to the registration request, it is ignored. Code that
 | really wants to change a role has to say so explicitly:
 |     $user->role = UserRole::Admin;
+|
+| `email` is fillable because sign-up sets it from validated input. Changing
+| it later is NOT a profile update: it goes through EmailChangeService,
+| which keeps the new address in the non-fillable `pending_email` until the
+| link mailed to it is clicked (D20).
 */
 #[Fillable(['name', 'email', 'password', 'phone'])]
 #[Hidden(['password', 'remember_token'])]
@@ -46,6 +51,7 @@ class User extends Authenticatable implements MustVerifyEmail
         'role' => 'traveler',
         'phone' => null,
         'email_verified_at' => null,
+        'pending_email' => null,
         'suspended_at' => null,
     ];
 
@@ -75,6 +81,12 @@ class User extends Authenticatable implements MustVerifyEmail
     protected function email(): Attribute
     {
         return Attribute::make(set: fn (string $value) => mb_strtolower(trim($value)));
+    }
+
+    /** Same normalisation, so the pending address compares equal to a future `email`. */
+    protected function pendingEmail(): Attribute
+    {
+        return Attribute::make(set: fn (?string $value) => $value === null ? null : mb_strtolower(trim($value)));
     }
 
     // --- Relationships ------------------------------------------------------

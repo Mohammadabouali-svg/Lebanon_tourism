@@ -408,7 +408,7 @@ browser redirect → card data never touches our server.
 
 | Need | Read |
 |---|---|
-| Why a choice was made | `docs/decisions.md` (D1–D19) |
+| Why a choice was made | `docs/decisions.md` (D1–D20) |
 | Setup / troubleshooting | `docs/01-getting-started.md` |
 | Request path, folder map | `docs/02-architecture.md` |
 | Sessions, CSRF, roles, policies | `docs/03-authentication.md` |
@@ -435,7 +435,7 @@ that #5 and #9 depend on). Update the status column as work lands.
 | 3 | Sold-out badge | `Badge` over the image in `TourCard.tsx` when `available_spots === 0` (not `!is_bookable`), image muted, still a link; book button was already hidden on detail/booking pages; 2 characterisation tests in `TourCatalogTest`; no Vitest (no new dependency) | done: verified 2026-11-25 (95 tests, build + lint + pint OK, manual check guest + traveler) |
 | 5 | Expire stale pending bookings | Artisan command, 15 min; `BookingService::releaseSpots()` is private today, so expose a deliberate public method; schedule in `routes/console.php` (scheduler runs only in prod compose: test the command directly); `travel()` | done: verified 2026-11-25 (`bookings:expire-pending` every minute, `expireStalePending()` locks + re-checks, `markPaid()` refuses expired bookings and credits the wallet, D18; 102 tests, pint, build, lint, manual check OK) |
 | 6 | Admin moderation lock | `moderated_at` (timestampTz, not fillable) + CHECK `tours_moderated_means_archived`; admin archive locks, other admin status unlocks (`TourService::moderate()`); operator status change refused in `TourService::save()` under the row lock, 422 `tour_moderated` (service, not policy/Form Request: D19); 9 tests in `TourManagementTest` / `AdministrationTest` | done: verified 2026-11-25 (111 tests, pint, build, lint, manual check admin + operator OK) |
-| 4 | Change e-mail | `pending_email` + signed link to new address; swap on click | todo |
+| 4 | Change e-mail | `pending_email` (not fillable, CHECK `users_pending_email_differs`, no unique index); `POST`/`DELETE user/email-change` (current password, `throttle:6,1`); signed `POST email/change/{id}/{hash}` (hash of pending address, 60 min, no login); `EmailChangeService::confirm()` locks, re-checks free (`email_taken`), swaps, verifies, deletes old reset tokens, notifies old address after commit (D20); 23 tests in `EmailChangeTest` / `AccessControlTest` | done: verified 2026-11-25 (134 tests, pint, build, lint, manual check traveler2 OK) |
 | 8 | Review photos | `review_photos` table, max 3, `photos.*`, delete files with review | todo |
 | 7 | CSP header | `docker/nginx/prod.conf`; check console in prod stack | todo |
 | 12 | Audit log | `audit_events` for admin actions + admin page | todo |
@@ -524,6 +524,12 @@ the machine you are on: they are fallbacks, not requirements.
 - **OneDrive folder means slow bind mounts.** The full suite takes about
   1.5–2 minutes; login and save in the app take 10–20 s. Wait instead of
   assuming something is broken, and run the full suite in the background.
+- **Restart the `queue` container after changing routes, notifications or
+  services** (`docker compose restart queue`). The worker is a long-running
+  process that keeps the code it booted with. Tests fake notifications, so
+  they don't catch this. Seen in Exercise 4: a queued e-mail failed with
+  "Route [...] not defined" until the worker was restarted; then
+  `php artisan queue:retry all`.
 - **Never run two test runs at once**: they share `lebanon_tourism_test`, and
   `RefreshDatabase` makes them clash. Tests added while a run is in progress
   may be picked up by it.

@@ -5,9 +5,9 @@ namespace App\Http\Requests;
 use Illuminate\Foundation\Http\FormRequest;
 
 /*
-| Only name and phone can be changed here. Changing the e-mail address would
-| require verifying the new address again; that flow is left as an exercise
-| (see docs/10-exercises.md).
+| Only name and phone can be changed here. The e-mail address has its own
+| flow (EmailChangeController, D20): the new address must be confirmed from
+| its inbox before it replaces the old one, so it is never a plain update.
 */
 class UpdateProfileRequest extends FormRequest
 {

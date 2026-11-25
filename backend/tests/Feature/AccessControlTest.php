@@ -91,6 +91,23 @@ class AccessControlTest extends TestCase
         $this->getJson('/api/user')->assertForbidden();
     }
 
+    public function test_guests_cannot_request_or_cancel_an_email_change(): void
+    {
+        $this->postJson('/api/user/email-change', ['email' => 'new@example.com', 'current_password' => 'password'])
+            ->assertUnauthorized();
+        $this->deleteJson('/api/user/email-change')->assertUnauthorized();
+    }
+
+    public function test_a_suspended_user_cannot_request_an_email_change(): void
+    {
+        $user = User::factory()->suspended()->create();
+
+        $this->actingAs($user)
+            ->postJson('/api/user/email-change', ['email' => 'new@example.com', 'current_password' => 'password'])
+            ->assertForbidden();
+        $this->assertNull($user->fresh()->pending_email);
+    }
+
     public function test_api_errors_are_json_never_html(): void
     {
         $this->get('/api/does-not-exist')

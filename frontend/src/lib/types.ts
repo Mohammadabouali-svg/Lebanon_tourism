@@ -32,6 +32,8 @@ export interface User {
   phone: string | null
   role: Role
   email_verified: boolean
+  /** A requested new address, waiting for its link to be clicked (null if none). */
+  pending_email: string | null
   suspended: boolean
   operator?: OperatorProfile | null
   wallet_balance_cents?: number | null

@@ -14,7 +14,7 @@ import { parseApiError } from '@/lib/api'
 import { formatDateTime } from '@/lib/dates'
 import { formatMoney } from '@/lib/money'
 import type { User } from '@/lib/types'
-import { useUpdatePassword, useUpdateProfile, useWallet } from './queries'
+import { useCancelEmailChange, useRequestEmailChange, useUpdatePassword, useUpdateProfile, useWallet } from './queries'
 
 export function AccountPage() {
   const { user } = useCurrentUser()
@@ -24,6 +24,7 @@ export function AccountPage() {
     <div className="mx-auto max-w-4xl space-y-6 px-4 py-10">
       <PageHeader title="My account" description={user.email} />
       <ProfileForm user={user} />
+      <EmailForm user={user} />
       <PasswordForm />
       {user.role === 'traveler' && <WalletSection />}
     </div>
@@ -41,13 +42,63 @@ function ProfileForm({ user }: { user: User }) {
   }
 
   return (
-    <CardSection title="Profile" description="Your e-mail address cannot be changed here.">
+    <CardSection title="Profile">
       <form onSubmit={submit} className="grid gap-4 sm:grid-cols-2" noValidate>
         <TextField label="Full name" autoComplete="name" {...field('name')} error={error?.fieldErrors.name} />
         <TextField label="Phone" type="tel" autoComplete="tel" {...field('phone')} error={error?.fieldErrors.phone} />
         <div className="flex items-center gap-3 sm:col-span-2">
           <Button type="submit" loading={update.isPending}>Save profile</Button>
           {update.isSuccess && <span role="status" className="text-sm text-brand-700">Saved.</span>}
+        </div>
+      </form>
+    </CardSection>
+  )
+}
+
+/*
+ * Changing the e-mail address. The new address replaces the current one only
+ * after the user clicks the link we mail to it (see ConfirmEmailChangePage),
+ * so the form says "check your inbox", never "saved".
+ */
+function EmailForm({ user }: { user: User }) {
+  const request = useRequestEmailChange()
+  const cancel = useCancelEmailChange()
+  const { values, field, reset } = useFormFields({ email: '', current_password: '' })
+  const error = request.error ? parseApiError(request.error) : null
+
+  function submit(event: FormEvent) {
+    event.preventDefault()
+    request.mutate(values, { onSuccess: reset })
+  }
+
+  return (
+    <CardSection
+      title="E-mail address"
+      description={<>You sign in with <strong>{user.email}</strong>. A new address must be confirmed from its inbox before it replaces this one.</>}
+    >
+      {user.pending_email && (
+        <Alert tone="info" title="Waiting for confirmation" className="mb-4">
+          <p>
+            We sent a link to <strong>{user.pending_email}</strong>. Until you click it, you keep signing in with {user.email}.
+            To get a new link, request the change again.
+          </p>
+          <div className="mt-3 flex items-center gap-3">
+            <Button variant="secondary" size="sm" loading={cancel.isPending} onClick={() => cancel.mutate()}>
+              Cancel the change
+            </Button>
+            {cancel.isError && <span role="alert" className="text-sm text-red-700">{parseApiError(cancel.error).message}</span>}
+          </div>
+        </Alert>
+      )}
+      <form onSubmit={submit} className="grid gap-4 sm:grid-cols-2" noValidate>
+        <TextField label="New e-mail address" type="email" autoComplete="email" {...field('email')} error={error?.fieldErrors.email} />
+        <TextField label="Current password" type="password" autoComplete="current-password" {...field('current_password')} error={error?.fieldErrors.current_password} />
+        {error && Object.keys(error.fieldErrors).length === 0 && (
+          <Alert tone="error" className="sm:col-span-2">{error.message}</Alert>
+        )}
+        <div className="flex items-center gap-3 sm:col-span-2">
+          <Button type="submit" loading={request.isPending}>Send confirmation link</Button>
+          {request.isSuccess && <span role="status" className="text-sm text-brand-700">Check the inbox of the new address.</span>}
         </div>
       </form>
     </CardSection>

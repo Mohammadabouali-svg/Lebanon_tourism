@@ -38,6 +38,14 @@ already hid the book button on `!is_bookable`. Two tests in
 must be verified before it replaces the old one (otherwise a typo locks the
 user out, and an attacker with a stolen session could take the account over).
 Hint: store `pending_email`, send a signed link to it, swap on click.
+*Implemented:* migration `2026_11_25_000200_add_pending_email_to_users` (with
+the `users_pending_email_differs` CHECK); `POST`/`DELETE /api/user/email-change`
+(current password required) and the signed `POST /api/email/change/{id}/{hash}`;
+`EmailChangeService` swaps under a row lock, re-checks that the address is
+free (code `email_taken`), deletes the old address's reset tokens and
+notifies the old address (D20). Tests in `EmailChangeTest` and
+`AccessControlTest`. Write-up:
+[exercises/04-change-email.md](exercises/04-change-email.md).
 
 **5. Expire stale pending bookings.** If the server crashes between charging
 a card and confirming the booking, a `pending` booking keeps its spots

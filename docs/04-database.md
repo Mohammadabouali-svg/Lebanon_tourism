@@ -44,6 +44,7 @@ else: bugs, race conditions, a script someone runs by hand next year.
 | `wallets_balance_not_negative` | a wallet can never go below $0 |
 | `tours_no_overbooking` (`booked_spots <= capacity`) | a tour can never be overbooked |
 | `tours_moderated_means_archived` (`moderated_at IS NULL OR status = 'archived'`) | a tour an admin locked stays archived until an admin reinstates it (Exercise 6, D19) |
+| `users_pending_email_differs` (`pending_email IS NULL OR pending_email <> email`) | a pending e-mail change is always to a *different* address (Exercise 4, D20). `pending_email` has deliberately **no** unique index, so nobody can block an address by "reserving" it; uniqueness is enforced on `email` at swap time |
 | `bookings_totals_consistent` | `subtotal = unit price × spots` and `total = subtotal − discount` |
 | `bookings_one_discount_per_user` (partial unique index) | a code is used once per traveler; cancelled bookings don't count |
 | `reviews (tour_id, user_id)` unique | one review per traveler and tour |

@@ -3,6 +3,7 @@ import { DashboardLayout, type DashboardNavItem } from '@/components/layout/Dash
 import { PublicLayout } from '@/components/layout/PublicLayout'
 import { RootLayout } from '@/components/layout/RootLayout'
 import { AccountPage } from '@/features/account/AccountPage'
+import { ConfirmEmailChangePage } from '@/features/account/ConfirmEmailChangePage'
 import { ForgotPasswordPage } from '@/features/auth/ForgotPasswordPage'
 import { RequireApprovedOperator, RequireAuth } from '@/features/auth/guards'
 import { LoginPage } from '@/features/auth/LoginPage'
@@ -65,6 +66,8 @@ export const router = createBrowserRouter([
           { path: 'forgot-password', element: <ForgotPasswordPage /> },
           { path: 'reset-password', element: <ResetPasswordPage /> },
           { path: 'verify-email', element: <VerifyEmailPage /> },
+          // Public: the link from the e-mail may be opened while logged out.
+          { path: 'confirm-email-change', element: <ConfirmEmailChangePage /> },
 
           {
             element: <RequireAuth roles={['traveler']} requireVerified />,

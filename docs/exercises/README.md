@@ -9,6 +9,7 @@ the tests that prove it, and how it was verified.
 | 1 | Meeting point | [01-meeting-point.md](01-meeting-point.md) |
 | 2 | Price limit | [02-price-limit.md](02-price-limit.md) |
 | 3 | "Sold out" badge | [03-sold-out-badge.md](03-sold-out-badge.md) |
+| 4 | Change e-mail address | [04-change-email.md](04-change-email.md) |
 | 5 | Expire stale pending bookings | [05-expire-pending-bookings.md](05-expire-pending-bookings.md) |
 | 6 | Admin moderation lock | [06-moderation-lock.md](06-moderation-lock.md) |
 

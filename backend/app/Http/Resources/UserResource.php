@@ -30,6 +30,9 @@ class UserResource extends JsonResource
             'phone' => $this->phone,
             'role' => $this->role,
             'email_verified' => $this->email_verified_at !== null,
+            // Shown only to the user themself (GET /api/user) and admins; it
+            // is the address they asked to switch to (D20).
+            'pending_email' => $this->pending_email,
             'suspended' => $this->isSuspended(),
             'operator' => $this->whenLoaded('operatorProfile', fn () => $this->operatorProfile ? [
                 'company_name' => $this->operatorProfile->company_name,

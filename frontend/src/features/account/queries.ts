@@ -27,6 +27,58 @@ export interface PasswordPayload {
   password_confirmation: string
 }
 
+export interface EmailChangePayload {
+  email: string
+  current_password: string
+}
+
+/*
+ * Asks for a new address. The server only stores it as `pending_email` and
+ * mails a link to it; `email` changes when that link is clicked.
+ */
+export function useRequestEmailChange() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async (payload: EmailChangePayload) => {
+      await api.post('/user/email-change', payload)
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: userKey }),
+  })
+}
+
+export function useCancelEmailChange() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async () => {
+      await api.delete('/user/email-change')
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: userKey }),
+  })
+}
+
+export interface ConfirmEmailChangeParams {
+  id: string
+  hash: string
+  expires: string
+  signature: string
+}
+
+export function useConfirmEmailChange() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    /*
+     * Same idea as useVerifyEmail: the link carries a signed API path, which
+     * we rebuild exactly. Changing any part makes Laravel answer 403.
+     */
+    mutationFn: async ({ id, hash, expires, signature }: ConfirmEmailChangeParams) => {
+      const path = `/email/change/${encodeURIComponent(id)}/${encodeURIComponent(hash)}`
+      const query = `?expires=${encodeURIComponent(expires)}&signature=${encodeURIComponent(signature)}`
+      return (await api.post<{ message: string }>(path + query)).data.message
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: userKey }),
+  })
+}
+
 export function useUpdatePassword() {
   return useMutation({
     mutationFn: async (payload: PasswordPayload) => {

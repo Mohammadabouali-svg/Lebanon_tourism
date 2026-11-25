@@ -93,6 +93,18 @@ class BusinessRuleException extends RuntimeException implements ShouldntReport
         return new self(trim("This {$thing} is still in use and cannot be deleted. {$advice}"), 'still_in_use');
     }
 
+    /*
+    | The confirmed new address was taken by another account after the change
+    | was requested (e.g. someone registered it in between). See D20.
+    */
+    public static function emailTaken(): self
+    {
+        return new self(
+            'This e-mail address now belongs to another account, so it cannot be used. Your address was not changed.',
+            'email_taken',
+        );
+    }
+
     public static function cannotSuspendSelf(): self
     {
         return new self('You cannot suspend your own account.', 'cannot_suspend_self');
