@@ -12,7 +12,9 @@ use App\Models\Discount;
 use App\Models\Tour;
 use App\Models\User;
 use App\Payments\PaymentGateway;
+use Carbon\CarbonInterface;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 
 /*
 | Everything that happens when a traveler books or cancels a tour.
@@ -139,6 +141,81 @@ final class BookingService
         });
     }
 
+    /*
+    | Expires card bookings that have been `pending` for longer than
+    | config('payments.pending_timeout_minutes'). Run every minute by the
+    | bookings:expire-pending command.
+    |
+    | Why this exists: a card booking holds its spots as `pending` while the
+    | card is charged (see bookWithCard). If the server crashes between the
+    | charge and the confirmation, nothing ever confirms or releases it, and
+    | its spots and discount use would be held forever.
+    |
+    | Why a new public method and not just making releaseSpots() public:
+    | releaseSpots() does not check the booking. Called on a booking that is
+    | already cancelled or failed, it would give the same spots back a second
+    | time. This method locks each booking and re-checks it is still pending
+    | and still too old, like cancel() does, so running it twice, or twice at
+    | the same time, is harmless.
+    |
+    | Each booking gets its own short transaction: locks are held briefly and
+    | one bad row cannot roll back the others. chunkById() pages by id, so it
+    | stays correct while the rows it already handled change status.
+    |
+    | No refund here: we cannot ask the (fake) gateway whether a stuck
+    | booking was charged, and crediting a card that was never charged would
+    | hand out free money. Each expiry is logged for manual reconciliation.
+    | See D18 in docs/decisions.md.
+    |
+    | Returns how many bookings were expired.
+    */
+    public function expireStalePending(): int
+    {
+        $cutoff = now()->subMinutes((int) config('payments.pending_timeout_minutes'));
+        $expired = 0;
+
+        Booking::query()
+            ->where('status', BookingStatus::Pending)
+            ->where('created_at', '<', $cutoff)
+            ->select('id')
+            ->chunkById(100, function ($bookings) use ($cutoff, &$expired) {
+                foreach ($bookings as $candidate) {
+                    $booking = $this->expireIfStale($candidate->id, $cutoff);
+
+                    if ($booking !== null) {
+                        $expired++;
+                        Log::warning('Expired a stale pending card booking; check with the payment provider whether it was charged.', [
+                            'booking' => $booking->reference,
+                            'total_cents' => $booking->total_cents,
+                        ]);
+                    }
+                }
+            });
+
+        return $expired;
+    }
+
+    /** Returns the expired booking, or null if it was no longer stale (confirmed, failed, ...). */
+    private function expireIfStale(int $bookingId, CarbonInterface $cutoff): ?Booking
+    {
+        return DB::transaction(function () use ($bookingId, $cutoff) {
+            /** @var Booking|null $locked */
+            $locked = Booking::query()->whereKey($bookingId)->lockForUpdate()->first();
+
+            // Re-check under the lock: the payment may have just been confirmed,
+            // or another run of the command may have expired it already.
+            if ($locked === null
+                || $locked->status !== BookingStatus::Pending
+                || $locked->created_at->greaterThanOrEqualTo($cutoff)) {
+                return null;
+            }
+
+            $this->releaseSpots($locked, BookingStatus::Failed);
+
+            return $locked;
+        });
+    }
+
     /**
      * Locks the tour, checks it can take `$spots` more travelers, prices the
      * booking and claims the spots (and the discount use).
@@ -197,15 +274,59 @@ final class BookingService
         return $booking;
     }
 
+    /**
+     * Confirms a pending card booking after the charge succeeded.
+     *
+     * The booking is locked and re-checked first. If the charge took longer
+     * than the pending timeout, bookings:expire-pending may already have
+     * marked it failed and given its spots to someone else. Confirming it
+     * then would overbook the tour. Instead the booking stays failed and,
+     * because we know the card was charged, the amount is credited to the
+     * traveler's wallet (the same travel-credit policy as cancel()).
+     *
+     * @throws BusinessRuleException when the booking expired during the charge
+     */
     private function markPaid(Booking $booking, ?string $paymentReference): Booking
     {
-        $booking->forceFill([
-            'status' => BookingStatus::Confirmed,
-            'payment_reference' => $paymentReference,
-            'paid_at' => now(),
-        ])->save();
+        $confirmed = DB::transaction(function () use ($booking, $paymentReference) {
+            /** @var Booking $locked */
+            $locked = Booking::query()->whereKey($booking->getKey())->lockForUpdate()->firstOrFail();
 
-        return $booking;
+            if ($locked->status !== BookingStatus::Pending) {
+                $locked->load('user.wallet');
+
+                if ($locked->total_cents > 0) {
+                    $this->wallets->credit(
+                        $locked->user->wallet,
+                        $locked->total_cents,
+                        "Refund for expired booking {$locked->reference}",
+                        $locked,
+                    );
+                }
+
+                Log::warning('A card charge succeeded after its booking expired; refunded to the wallet.', [
+                    'booking' => $locked->reference,
+                    'payment_reference' => $paymentReference,
+                ]);
+
+                return null;
+            }
+
+            $locked->forceFill([
+                'status' => BookingStatus::Confirmed,
+                'payment_reference' => $paymentReference,
+                'paid_at' => now(),
+            ])->save();
+
+            return $locked;
+        });
+
+        // Thrown after the transaction, so the wallet credit is committed.
+        if ($confirmed === null) {
+            throw BusinessRuleException::bookingExpired();
+        }
+
+        return $confirmed;
     }
 
     /** Gives the spots (and the discount use) back and records the new status. */

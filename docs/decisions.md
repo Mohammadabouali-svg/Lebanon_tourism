@@ -174,8 +174,9 @@ that production uses.
 
 To keep the project teachable, some things are listed as exercises instead of
 being built: e-mail address change with re-verification, cleanup of stale
-`pending` card bookings, a real Stripe driver, recurring departures, full-text
-search, admin "lock" on moderated tours. See [10-exercises.md](10-exercises.md).
+`pending` card bookings (since built in Exercise 5, see D18), a real Stripe
+driver, recurring departures, full-text search, admin "lock" on moderated
+tours. See [10-exercises.md](10-exercises.md).
 
 ## D17. The tour price cap is validation only, not a database constraint
 
@@ -203,3 +204,55 @@ save any edit to it.
 would need `NOT VALID` or a data clean-up on a real database). Enforcing the
 limit in `TourService` (it is a plain input bound, which is the Form
 Request's job, and the 422 field error is what the form displays).
+
+## D18. Stale pending card bookings expire after 15 minutes
+
+**Context.** A card booking holds its spots as `pending` while the card is
+charged outside any transaction (chapter 05, "Booking with a card"). If the server crashes
+between the charge and the confirmation, the booking is never confirmed or
+released. Exercise 5 asks for a scheduled command that marks such bookings
+`failed` and releases their spots.
+
+**Decision.**
+- `bookings:expire-pending` runs **every minute** with `withoutOverlapping()`
+  and calls a new public `BookingService::expireStalePending()`. The timeout is
+  `config('payments.pending_timeout_minutes')` (15), next to the gateway
+  configuration it must stay above.
+- `releaseSpots()` stays **private**. The public method locks each booking and
+  re-checks that it is still `pending` and older than the cutoff before
+  releasing, one short transaction per booking (the `cancel()` pattern).
+- `markPaid()` also locks the booking and confirms it **only if it is still
+  pending**. A charge that succeeds after expiry leaves the booking `failed`,
+  credits the amount to the wallet as travel credit, and returns the new code
+  `booking_expired`.
+- A booking expired after a crash is **not refunded** automatically; it is
+  logged for manual reconciliation. No e-mail is sent.
+- **No new index** on `(status, created_at)`.
+
+**Why.** Making `releaseSpots()` public would let a caller release the spots of
+a booking that is already cancelled or failed, counting them back twice. Without
+the check in `markPaid()`, a slow charge could confirm a booking whose spots
+were already given to someone else: overbooking (proven by
+`test_a_charge_that_succeeds_after_expiry_does_not_confirm_the_booking`, which
+got 201 before the fix). In the late-charge case we *know* the card was
+charged, so the traveler is made whole, consistent with the cancellation
+policy. In the crash case we do not know, and the fake gateway cannot be
+asked, so an automatic credit could hand out money for an unpaid booking. One
+transaction per booking keeps locks short and isolates failures. Every minute
+bounds how long spots are held (about 16 minutes); the query is cheap at this
+project's size, since few rows are ever pending.
+
+**Consequences.** A traveler whose card was charged just before a crash ends
+up with a `failed` booking until someone reconciles it by hand; a real
+provider's webhook (Exercise 9) should settle that case. Travelers are not
+notified of an expiry. The scheduler only runs in the production compose file,
+so in development the command must be run by hand. If the bookings table grows
+large, a partial index `ON bookings (created_at) WHERE status = 'pending'`
+would make the query constant-time (see Exercise 11).
+
+**Rejected.** Making `releaseSpots()` public as it is (no re-check). One
+transaction for all stale bookings (long locks, one failure rolls back all).
+Crediting the wallet on every expiry (free money when the card was never
+charged). An e-mail to the traveler (in the crash case we cannot say whether
+they paid). Running every five minutes (spots held up to 20 minutes for no
+real saving).

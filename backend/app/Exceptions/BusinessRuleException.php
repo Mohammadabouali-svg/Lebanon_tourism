@@ -54,6 +54,15 @@ class BusinessRuleException extends RuntimeException implements ShouldntReport
         return new self($reason ?? 'Your payment was declined.', 'payment_declined');
     }
 
+    /** The card was charged after the booking had already expired (see BookingService::markPaid). */
+    public static function bookingExpired(): self
+    {
+        return new self(
+            'Your payment took too long and the booking expired. The amount was added to your wallet as travel credit.',
+            'booking_expired',
+        );
+    }
+
     public static function bookingNotCancellable(): self
     {
         return new self('This booking can no longer be cancelled.', 'booking_not_cancellable');

@@ -45,6 +45,11 @@ forever. Write an artisan command that marks pending bookings older than 15
 minutes as `failed` and releases their spots (reuse `BookingService`; you
 will need to make the release logic public). Schedule it in
 `routes/console.php`. Test it with `$this->travel(20)->minutes()`.
+*Implemented:* `bookings:expire-pending` (every minute) calling
+`BookingService::expireStalePending()`, which locks and re-checks each booking;
+`markPaid()` no longer confirms an expired booking. Tests in
+`ExpirePendingBookingsTest`. Write-up:
+[exercises/05-expire-pending-bookings.md](exercises/05-expire-pending-bookings.md).
 
 **6. Admin moderation lock.** Today an operator can re-publish a tour an
 admin archived. Add a `moderated_at` column; while it is set, the operator

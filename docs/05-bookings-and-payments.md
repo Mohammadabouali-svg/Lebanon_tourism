@@ -104,7 +104,8 @@ sequenceDiagram
     S->>DB: transaction 1: lock tour, check, hold spots, booking = pending
     S->>G: charge(total)  (no transaction open)
     alt approved
-        S->>DB: booking = confirmed, store payment reference
+        S->>DB: transaction 2: lock booking; still pending → confirmed, store payment reference
+        Note over S,DB: already expired → stays failed, amount credited to wallet (booking_expired)
     else declined
         S->>DB: transaction 2: give spots back, booking = failed
     end
@@ -118,10 +119,36 @@ is typed into the provider's own form (Stripe Checkout, Stripe Elements, ...)
 and our server only sees a payment id. That keeps card data off our servers,
 which is both safer and required by the card industry's rules (PCI DSS).
 
-Known gap, left as an exercise: if the server crashed between "charge" and
-"confirm", the booking would stay `pending`. Real integrations handle this
-with the provider's webhooks and a scheduled job that expires old pending
-bookings. See [10-exercises.md](10-exercises.md).
+### Stale pending bookings (Exercise 5)
+
+If the server crashes between "charge" and "confirm", nothing ever confirms
+or releases the booking: it would stay `pending` and hold its spots (and its
+discount use) forever. The scheduler runs `bookings:expire-pending` every
+minute ([`routes/console.php`](../backend/routes/console.php)). It calls
+`BookingService::expireStalePending()`, which finds card bookings still
+`pending` after `config('payments.pending_timeout_minutes')` (15) and, **one
+short transaction per booking**, locks the booking, re-checks that it is still
+pending and still too old, then releases the spots and the discount use and
+marks it `failed`. Because of the re-check, running it twice (or twice at
+once) changes nothing the second time. It can be run by hand:
+
+```bash
+docker compose exec php php artisan bookings:expire-pending
+```
+
+The other side of the race is `markPaid()`. A charge that takes longer than
+the timeout could succeed *after* its booking was expired and its spots given
+to someone else. So `markPaid()` also locks the booking and confirms it only
+if it is still `pending`. Otherwise the booking stays `failed`, the charged
+amount is credited to the traveler's wallet as travel credit (we know the
+card was charged), and the request fails with the code `booking_expired`.
+
+What it does **not** do: refund a booking expired after a crash. We cannot
+ask the fake gateway whether that card was charged, and crediting a card that
+was never charged would hand out money. Each expiry is logged (warning, with
+the booking reference) for manual reconciliation. With a real provider, its
+webhook (Exercise 9) is what settles that case. See
+[D18](decisions.md#d18-stale-pending-card-bookings-expire-after-15-minutes).
 
 ## Cancelling
 

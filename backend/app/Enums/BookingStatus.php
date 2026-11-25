@@ -7,7 +7,9 @@ namespace App\Enums;
 |
 |   wallet payment:  ─────────────────────────────► confirmed ──► cancelled
 |   card payment:    pending ──(gateway approves)──► confirmed ──► cancelled
-|                       └─────(gateway declines)──► failed
+|                       ├─────(gateway declines)──► failed
+|                       └──(still pending > 15 min,
+|                           bookings:expire-pending)──► failed
 */
 enum BookingStatus: string
 {
@@ -18,7 +20,7 @@ enum BookingStatus: string
 
     case Cancelled = 'cancelled';
 
-    /** The payment was declined. The held spots were released. */
+    /** The payment was declined, or the booking expired while pending. The held spots were released. */
     case Failed = 'failed';
 
     /**
