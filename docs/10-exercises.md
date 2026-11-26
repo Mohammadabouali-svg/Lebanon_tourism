@@ -126,6 +126,14 @@ gets slow with many tours. Try Postgres' `pg_trgm` extension with a GIN
 index, or full-text search (`to_tsvector`). Measure before and after with
 `EXPLAIN ANALYZE` on 100,000 generated tours.
 
+*Implemented:* `pg_trgm` with a GIN index `tours_title_trgm` and an index on
+`tours.city_id` (migration `2026_11_26_000400_add_search_indexes_to_tours`);
+the search looks up matching city ids first, so Postgres can combine both
+indexes. Same results, measured from 200–530 ms down to 0.5–100 ms on
+100,000 tours. See [D24](decisions.md), chapter [04](04-database.md), the
+benchmark scripts in `backend/database/benchmarks/` and the write-up
+[exercises/11-faster-search.md](exercises/11-faster-search.md).
+
 **12. Audit log.** Record who changed what in the admin area (approvals,
 suspensions, wallet credits, tour status) in an `audit_events` table, and
 show it on a new admin page.

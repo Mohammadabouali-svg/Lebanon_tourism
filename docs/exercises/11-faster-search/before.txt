@@ -1,0 +1,804 @@
+==================================================================
+TERM: hike (common word, 5% of titles)   pattern: %hike%
+count query ms (runs 1-6): 473.398 595.895 490.343 484.647 425.302 372.366
+page query  ms (runs 1-6): 379.022 502.316 351.162 468.565 431.421 357.628
+------------------------------------------------------------------
+Pager usage is off.
+                                                                        QUERY PLAN                                                                        
+----------------------------------------------------------------------------------------------------------------------------------------------------------
+ Aggregate  (cost=148455.85..148455.86 rows=1 width=8) (actual time=332.099..332.116 rows=1.00 loops=1)
+   Buffers: shared hit=4320
+   ->  Hash Semi Join  (cost=7630.68..148371.18 rows=33869 width=0) (actual time=165.704..331.862 rows=1000.00 loops=1)
+         Hash Cond: (tours.operator_id = users.id)
+         Buffers: shared hit=4320
+         ->  Hash Join  (cost=7614.15..147879.07 rows=37632 width=8) (actual time=130.142..295.833 rows=1250.00 loops=1)
+               Hash Cond: (tours.id = departures.tour_id)
+               Buffers: shared hit=4313
+               ->  Seq Scan on tours  (cost=0.00..139728.00 rows=45053 width=16) (actual time=0.029..162.716 rows=4500.00 loops=1)
+                     Filter: (((status)::text = 'published'::text) AND (((title)::text ~~* '%hike%'::text) OR (ANY (city_id = (hashed SubPlan 2).col1))))
+                     Rows Removed by Filter: 95500
+                     Buffers: shared hit=2229
+                     SubPlan 2
+                       ->  Seq Scan on cities  (cost=0.00..1.30 rows=1 width=8) (actual time=0.361..0.362 rows=0.00 loops=1)
+                             Filter: ((name)::text ~~* '%hike%'::text)
+                             Rows Removed by Filter: 24
+                             Buffers: shared hit=1
+               ->  Hash  (cost=6573.52..6573.52 rows=83250 width=8) (actual time=129.436..129.438 rows=85000.00 loops=1)
+                     Buckets: 131072  Batches: 1  Memory Usage: 4345kB
+                     Buffers: shared hit=2084
+                     ->  HashAggregate  (cost=5741.02..6573.52 rows=83250 width=8) (actual time=92.700..109.572 rows=85000.00 loops=1)
+                           Group Key: departures.tour_id
+                           Batches: 1  Memory Usage: 4121kB
+                           Buffers: shared hit=2084
+                           ->  Seq Scan on departures  (cost=0.00..5209.00 rows=212808 width=8) (actual time=0.026..37.888 rows=214000.00 loops=1)
+                                 Filter: (starts_on > '2026-11-26'::date)
+                                 Rows Removed by Filter: 36000
+                                 Buffers: shared hit=2084
+         ->  Hash  (cost=14.29..14.29 rows=180 width=16) (actual time=35.534..35.545 rows=180.00 loops=1)
+               Buckets: 1024  Batches: 1  Memory Usage: 17kB
+               Buffers: shared hit=7
+               ->  Hash Join  (cost=7.75..14.29 rows=180 width=16) (actual time=35.458..35.515 rows=180.00 loops=1)
+                     Hash Cond: (users.id = operator_profiles.user_id)
+                     Buffers: shared hit=7
+                     ->  Seq Scan on users  (cost=0.00..6.00 rows=200 width=8) (actual time=0.021..0.037 rows=200.00 loops=1)
+                           Buffers: shared hit=4
+                     ->  Hash  (cost=5.50..5.50 rows=180 width=8) (actual time=35.410..35.421 rows=180.00 loops=1)
+                           Buckets: 1024  Batches: 1  Memory Usage: 16kB
+                           Buffers: shared hit=3
+                           ->  Seq Scan on operator_profiles  (cost=0.00..5.50 rows=180 width=8) (actual time=35.341..35.376 rows=180.00 loops=1)
+                                 Filter: ((status)::text = 'approved'::text)
+                                 Rows Removed by Filter: 20
+                                 Buffers: shared hit=3
+ Planning:
+   Buffers: shared hit=445
+ Planning Time: 12.510 ms
+ JIT:
+   Functions: 55
+   Options: Inlining false, Optimization false, Expressions true, Deforming true
+   Timing: Generation 3.410 ms (Deform 1.292 ms), Inlining 0.000 ms, Optimization 1.093 ms, Emission 34.648 ms, Total 39.151 ms
+ Execution Time: 372.366 ms
+(51 rows)
+
+                                                                                          QUERY PLAN                                                                                          
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Limit  (cost=295151.23..295151.26 rows=12 width=1220) (actual time=349.266..349.276 rows=12.00 loops=1)
+   Buffers: shared hit=8326
+   ->  Sort  (cost=295151.23..295235.91 rows=33869 width=1220) (actual time=317.071..317.080 rows=12.00 loops=1)
+         Sort Key: ((SubPlan 4)), tours.id
+         Sort Method: top-N heapsort  Memory: 30kB
+         Buffers: shared hit=8326
+         ->  Hash Semi Join  (cost=7630.68..294374.79 rows=33869 width=1220) (actual time=188.270..316.360 rows=1000.00 loops=1)
+               Hash Cond: (tours.operator_id = users.id)
+               Buffers: shared hit=8320
+               ->  Hash Join  (cost=7614.15..147879.07 rows=37632 width=1176) (actual time=187.849..305.161 rows=1250.00 loops=1)
+                     Hash Cond: (tours.id = departures.tour_id)
+                     Buffers: shared hit=4313
+                     ->  Seq Scan on tours  (cost=0.00..139728.00 rows=45053 width=1176) (actual time=0.028..114.725 rows=4500.00 loops=1)
+                           Filter: (((status)::text = 'published'::text) AND (((title)::text ~~* '%hike%'::text) OR (ANY (city_id = (hashed SubPlan 6).col1))))
+                           Rows Removed by Filter: 95500
+                           Buffers: shared hit=2229
+                           SubPlan 6
+                             ->  Seq Scan on cities  (cost=0.00..1.30 rows=1 width=8) (actual time=0.219..0.220 rows=0.00 loops=1)
+                                   Filter: ((name)::text ~~* '%hike%'::text)
+                                   Rows Removed by Filter: 24
+                                   Buffers: shared hit=1
+                     ->  Hash  (cost=6573.52..6573.52 rows=83250 width=8) (actual time=187.234..187.236 rows=85000.00 loops=1)
+                           Buckets: 131072  Batches: 1  Memory Usage: 4345kB
+                           Buffers: shared hit=2084
+                           ->  HashAggregate  (cost=5741.02..6573.52 rows=83250 width=8) (actual time=112.538..146.627 rows=85000.00 loops=1)
+                                 Group Key: departures.tour_id
+                                 Batches: 1  Memory Usage: 4121kB
+                                 Buffers: shared hit=2084
+                                 ->  Seq Scan on departures  (cost=0.00..5209.00 rows=212808 width=8) (actual time=0.021..44.211 rows=214000.00 loops=1)
+                                       Filter: (starts_on > '2026-11-26'::date)
+                                       Rows Removed by Filter: 36000
+                                       Buffers: shared hit=2084
+               ->  Hash  (cost=14.29..14.29 rows=180 width=16) (actual time=0.176..0.178 rows=180.00 loops=1)
+                     Buckets: 1024  Batches: 1  Memory Usage: 17kB
+                     Buffers: shared hit=7
+                     ->  Hash Join  (cost=7.75..14.29 rows=180 width=16) (actual time=0.102..0.150 rows=180.00 loops=1)
+                           Hash Cond: (users.id = operator_profiles.user_id)
+                           Buffers: shared hit=7
+                           ->  Seq Scan on users  (cost=0.00..6.00 rows=200 width=8) (actual time=0.019..0.036 rows=200.00 loops=1)
+                                 Buffers: shared hit=4
+                           ->  Hash  (cost=5.50..5.50 rows=180 width=8) (actual time=0.071..0.072 rows=180.00 loops=1)
+                                 Buckets: 1024  Batches: 1  Memory Usage: 16kB
+                                 Buffers: shared hit=3
+                                 ->  Seq Scan on operator_profiles  (cost=0.00..5.50 rows=180 width=8) (actual time=0.017..0.044 rows=180.00 loops=1)
+                                       Filter: ((status)::text = 'approved'::text)
+                                       Rows Removed by Filter: 20
+                                       Buffers: shared hit=3
+               SubPlan 1
+                 ->  Aggregate  (cost=0.01..0.01 rows=1 width=32) (actual time=0.002..0.002 rows=1.00 loops=1000)
+                       ->  Seq Scan on reviews  (cost=0.00..0.00 rows=1 width=2) (actual time=0.000..0.000 rows=0.00 loops=1000)
+                             Filter: (tours.id = tour_id)
+               SubPlan 2
+                 ->  Aggregate  (cost=0.00..0.01 rows=1 width=8) (actual time=0.001..0.002 rows=1.00 loops=1000)
+                       ->  Seq Scan on reviews reviews_1  (cost=0.00..0.00 rows=1 width=0) (actual time=0.000..0.000 rows=0.00 loops=1000)
+                             Filter: (tours.id = tour_id)
+               SubPlan 4
+                 ->  Result  (cost=4.27..4.28 rows=1 width=4) (actual time=0.005..0.005 rows=1.00 loops=1000)
+                       Buffers: shared hit=4000
+                       InitPlan 3
+                         ->  Limit  (cost=0.42..4.27 rows=1 width=4) (actual time=0.004..0.004 rows=1.00 loops=1000)
+                               Buffers: shared hit=4000
+                               ->  Index Only Scan using departures_one_per_day on departures departures_1  (cost=0.42..11.98 rows=3 width=4) (actual time=0.004..0.004 rows=1.00 loops=1000)
+                                     Index Cond: ((tour_id = tours.id) AND (starts_on > '2026-11-26'::date))
+                                     Heap Fetches: 1000
+                                     Index Searches: 1000
+                                     Buffers: shared hit=4000
+ Planning:
+   Buffers: shared hit=110
+ Planning Time: 2.299 ms
+ JIT:
+   Functions: 71
+   Options: Inlining false, Optimization false, Expressions true, Deforming true
+   Timing: Generation 5.510 ms (Deform 2.450 ms), Inlining 0.000 ms, Optimization 2.306 ms, Emission 30.270 ms, Total 38.087 ms
+ Execution Time: 357.628 ms
+(74 rows)
+
+==================================================================
+TERM: zaatar (rare word, 10 titles)   pattern: %zaatar%
+count query ms (runs 1-6): 356.042 355.060 718.056 376.212 387.639 386.400
+page query  ms (runs 1-6): 480.980 382.875 915.508 525.554 452.685 376.708
+------------------------------------------------------------------
+Pager usage is off.
+                                                                         QUERY PLAN                                                                         
+------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Aggregate  (cost=148455.85..148455.86 rows=1 width=8) (actual time=354.356..354.373 rows=1.00 loops=1)
+   Buffers: shared hit=4320
+   ->  Hash Semi Join  (cost=7630.68..148371.18 rows=33869 width=0) (actual time=181.050..354.322 rows=10.00 loops=1)
+         Hash Cond: (tours.operator_id = users.id)
+         Buffers: shared hit=4320
+         ->  Hash Join  (cost=7614.15..147879.07 rows=37632 width=8) (actual time=151.814..325.050 rows=10.00 loops=1)
+               Hash Cond: (tours.id = departures.tour_id)
+               Buffers: shared hit=4313
+               ->  Seq Scan on tours  (cost=0.00..139728.00 rows=45053 width=16) (actual time=0.459..173.642 rows=10.00 loops=1)
+                     Filter: (((status)::text = 'published'::text) AND (((title)::text ~~* '%zaatar%'::text) OR (ANY (city_id = (hashed SubPlan 2).col1))))
+                     Rows Removed by Filter: 99990
+                     Buffers: shared hit=2229
+                     SubPlan 2
+                       ->  Seq Scan on cities  (cost=0.00..1.30 rows=1 width=8) (actual time=0.202..0.202 rows=0.00 loops=1)
+                             Filter: ((name)::text ~~* '%zaatar%'::text)
+                             Rows Removed by Filter: 24
+                             Buffers: shared hit=1
+               ->  Hash  (cost=6573.52..6573.52 rows=83250 width=8) (actual time=150.799..150.801 rows=85000.00 loops=1)
+                     Buckets: 131072  Batches: 1  Memory Usage: 4345kB
+                     Buffers: shared hit=2084
+                     ->  HashAggregate  (cost=5741.02..6573.52 rows=83250 width=8) (actual time=112.035..130.908 rows=85000.00 loops=1)
+                           Group Key: departures.tour_id
+                           Batches: 1  Memory Usage: 4121kB
+                           Buffers: shared hit=2084
+                           ->  Seq Scan on departures  (cost=0.00..5209.00 rows=212808 width=8) (actual time=0.023..47.088 rows=214000.00 loops=1)
+                                 Filter: (starts_on > '2026-11-26'::date)
+                                 Rows Removed by Filter: 36000
+                                 Buffers: shared hit=2084
+         ->  Hash  (cost=14.29..14.29 rows=180 width=16) (actual time=29.210..29.222 rows=180.00 loops=1)
+               Buckets: 1024  Batches: 1  Memory Usage: 17kB
+               Buffers: shared hit=7
+               ->  Hash Join  (cost=7.75..14.29 rows=180 width=16) (actual time=29.140..29.194 rows=180.00 loops=1)
+                     Hash Cond: (users.id = operator_profiles.user_id)
+                     Buffers: shared hit=7
+                     ->  Seq Scan on users  (cost=0.00..6.00 rows=200 width=8) (actual time=0.017..0.033 rows=200.00 loops=1)
+                           Buffers: shared hit=4
+                     ->  Hash  (cost=5.50..5.50 rows=180 width=8) (actual time=29.098..29.108 rows=180.00 loops=1)
+                           Buckets: 1024  Batches: 1  Memory Usage: 16kB
+                           Buffers: shared hit=3
+                           ->  Seq Scan on operator_profiles  (cost=0.00..5.50 rows=180 width=8) (actual time=29.034..29.067 rows=180.00 loops=1)
+                                 Filter: ((status)::text = 'approved'::text)
+                                 Rows Removed by Filter: 20
+                                 Buffers: shared hit=3
+ Planning:
+   Buffers: shared hit=445
+ Planning Time: 16.531 ms
+ JIT:
+   Functions: 55
+   Options: Inlining false, Optimization false, Expressions true, Deforming true
+   Timing: Generation 2.147 ms (Deform 0.783 ms), Inlining 0.000 ms, Optimization 0.875 ms, Emission 28.434 ms, Total 31.456 ms
+ Execution Time: 386.400 ms
+(51 rows)
+
+                                                                                         QUERY PLAN                                                                                         
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Limit  (cost=295151.23..295151.26 rows=12 width=1220) (actual time=372.333..372.346 rows=10.00 loops=1)
+   Buffers: shared hit=4366
+   ->  Sort  (cost=295151.23..295235.91 rows=33869 width=1220) (actual time=345.601..345.614 rows=10.00 loops=1)
+         Sort Key: ((SubPlan 4)), tours.id
+         Sort Method: quicksort  Memory: 27kB
+         Buffers: shared hit=4366
+         ->  Hash Semi Join  (cost=7630.68..294374.79 rows=33869 width=1220) (actual time=189.399..345.509 rows=10.00 loops=1)
+               Hash Cond: (tours.operator_id = users.id)
+               Buffers: shared hit=4360
+               ->  Hash Join  (cost=7614.15..147879.07 rows=37632 width=1176) (actual time=188.886..344.483 rows=10.00 loops=1)
+                     Hash Cond: (tours.id = departures.tour_id)
+                     Buffers: shared hit=4313
+                     ->  Seq Scan on tours  (cost=0.00..139728.00 rows=45053 width=1176) (actual time=0.887..156.434 rows=10.00 loops=1)
+                           Filter: (((status)::text = 'published'::text) AND (((title)::text ~~* '%zaatar%'::text) OR (ANY (city_id = (hashed SubPlan 6).col1))))
+                           Rows Removed by Filter: 99990
+                           Buffers: shared hit=2229
+                           SubPlan 6
+                             ->  Seq Scan on cities  (cost=0.00..1.30 rows=1 width=8) (actual time=0.369..0.370 rows=0.00 loops=1)
+                                   Filter: ((name)::text ~~* '%zaatar%'::text)
+                                   Rows Removed by Filter: 24
+                                   Buffers: shared hit=1
+                     ->  Hash  (cost=6573.52..6573.52 rows=83250 width=8) (actual time=187.081..187.083 rows=85000.00 loops=1)
+                           Buckets: 131072  Batches: 1  Memory Usage: 4345kB
+                           Buffers: shared hit=2084
+                           ->  HashAggregate  (cost=5741.02..6573.52 rows=83250 width=8) (actual time=97.588..137.414 rows=85000.00 loops=1)
+                                 Group Key: departures.tour_id
+                                 Batches: 1  Memory Usage: 4121kB
+                                 Buffers: shared hit=2084
+                                 ->  Seq Scan on departures  (cost=0.00..5209.00 rows=212808 width=8) (actual time=0.084..41.764 rows=214000.00 loops=1)
+                                       Filter: (starts_on > '2026-11-26'::date)
+                                       Rows Removed by Filter: 36000
+                                       Buffers: shared hit=2084
+               ->  Hash  (cost=14.29..14.29 rows=180 width=16) (actual time=0.402..0.405 rows=180.00 loops=1)
+                     Buckets: 1024  Batches: 1  Memory Usage: 17kB
+                     Buffers: shared hit=7
+                     ->  Hash Join  (cost=7.75..14.29 rows=180 width=16) (actual time=0.249..0.348 rows=180.00 loops=1)
+                           Hash Cond: (users.id = operator_profiles.user_id)
+                           Buffers: shared hit=7
+                           ->  Seq Scan on users  (cost=0.00..6.00 rows=200 width=8) (actual time=0.065..0.096 rows=200.00 loops=1)
+                                 Buffers: shared hit=4
+                           ->  Hash  (cost=5.50..5.50 rows=180 width=8) (actual time=0.158..0.159 rows=180.00 loops=1)
+                                 Buckets: 1024  Batches: 1  Memory Usage: 16kB
+                                 Buffers: shared hit=3
+                                 ->  Seq Scan on operator_profiles  (cost=0.00..5.50 rows=180 width=8) (actual time=0.040..0.104 rows=180.00 loops=1)
+                                       Filter: ((status)::text = 'approved'::text)
+                                       Rows Removed by Filter: 20
+                                       Buffers: shared hit=3
+               SubPlan 1
+                 ->  Aggregate  (cost=0.01..0.01 rows=1 width=32) (actual time=0.018..0.018 rows=1.00 loops=10)
+                       ->  Seq Scan on reviews  (cost=0.00..0.00 rows=1 width=2) (actual time=0.004..0.004 rows=0.00 loops=10)
+                             Filter: (tours.id = tour_id)
+               SubPlan 2
+                 ->  Aggregate  (cost=0.00..0.01 rows=1 width=8) (actual time=0.003..0.003 rows=1.00 loops=10)
+                       ->  Seq Scan on reviews reviews_1  (cost=0.00..0.00 rows=1 width=0) (actual time=0.001..0.001 rows=0.00 loops=10)
+                             Filter: (tours.id = tour_id)
+               SubPlan 4
+                 ->  Result  (cost=4.27..4.28 rows=1 width=4) (actual time=0.025..0.026 rows=1.00 loops=10)
+                       Buffers: shared hit=40
+                       InitPlan 3
+                         ->  Limit  (cost=0.42..4.27 rows=1 width=4) (actual time=0.022..0.022 rows=1.00 loops=10)
+                               Buffers: shared hit=40
+                               ->  Index Only Scan using departures_one_per_day on departures departures_1  (cost=0.42..11.98 rows=3 width=4) (actual time=0.018..0.018 rows=1.00 loops=10)
+                                     Index Cond: ((tour_id = tours.id) AND (starts_on > '2026-11-26'::date))
+                                     Heap Fetches: 10
+                                     Index Searches: 10
+                                     Buffers: shared hit=40
+ Planning:
+   Buffers: shared hit=110
+ Planning Time: 2.119 ms
+ JIT:
+   Functions: 71
+   Options: Inlining false, Optimization false, Expressions true, Deforming true
+   Timing: Generation 2.701 ms (Deform 0.871 ms), Inlining 0.000 ms, Optimization 1.325 ms, Emission 25.901 ms, Total 29.926 ms
+ Execution Time: 376.708 ms
+(74 rows)
+
+==================================================================
+TERM: byb (city name only)   pattern: %byb%
+count query ms (runs 1-6): 479.945 1438.923 704.114 406.388 475.242 530.531
+page query  ms (runs 1-6): 594.837 1197.144 746.284 488.289 510.819 443.308
+------------------------------------------------------------------
+Pager usage is off.
+                                                                       QUERY PLAN                                                                        
+---------------------------------------------------------------------------------------------------------------------------------------------------------
+ Aggregate  (cost=148455.85..148455.86 rows=1 width=8) (actual time=454.839..454.880 rows=1.00 loops=1)
+   Buffers: shared hit=4320
+   ->  Hash Semi Join  (cost=7630.68..148371.18 rows=33869 width=0) (actual time=254.379..450.675 rows=2833.00 loops=1)
+         Hash Cond: (tours.operator_id = users.id)
+         Buffers: shared hit=4320
+         ->  Hash Join  (cost=7614.15..147879.07 rows=37632 width=8) (actual time=173.447..367.475 rows=3666.00 loops=1)
+               Hash Cond: (tours.id = departures.tour_id)
+               Buffers: shared hit=4313
+               ->  Seq Scan on tours  (cost=0.00..139728.00 rows=45053 width=16) (actual time=2.536..192.041 rows=4167.00 loops=1)
+                     Filter: (((status)::text = 'published'::text) AND (((title)::text ~~* '%byb%'::text) OR (ANY (city_id = (hashed SubPlan 2).col1))))
+                     Rows Removed by Filter: 95833
+                     Buffers: shared hit=2229
+                     SubPlan 2
+                       ->  Seq Scan on cities  (cost=0.00..1.30 rows=1 width=8) (actual time=0.210..0.235 rows=1.00 loops=1)
+                             Filter: ((name)::text ~~* '%byb%'::text)
+                             Rows Removed by Filter: 23
+                             Buffers: shared hit=1
+               ->  Hash  (cost=6573.52..6573.52 rows=83250 width=8) (actual time=170.087..170.089 rows=85000.00 loops=1)
+                     Buckets: 131072  Batches: 1  Memory Usage: 4345kB
+                     Buffers: shared hit=2084
+                     ->  HashAggregate  (cost=5741.02..6573.52 rows=83250 width=8) (actual time=111.594..135.150 rows=85000.00 loops=1)
+                           Group Key: departures.tour_id
+                           Batches: 1  Memory Usage: 4121kB
+                           Buffers: shared hit=2084
+                           ->  Seq Scan on departures  (cost=0.00..5209.00 rows=212808 width=8) (actual time=0.036..43.175 rows=214000.00 loops=1)
+                                 Filter: (starts_on > '2026-11-26'::date)
+                                 Rows Removed by Filter: 36000
+                                 Buffers: shared hit=2084
+         ->  Hash  (cost=14.29..14.29 rows=180 width=16) (actual time=80.876..80.909 rows=180.00 loops=1)
+               Buckets: 1024  Batches: 1  Memory Usage: 17kB
+               Buffers: shared hit=7
+               ->  Hash Join  (cost=7.75..14.29 rows=180 width=16) (actual time=80.783..80.869 rows=180.00 loops=1)
+                     Hash Cond: (users.id = operator_profiles.user_id)
+                     Buffers: shared hit=7
+                     ->  Seq Scan on users  (cost=0.00..6.00 rows=200 width=8) (actual time=0.086..0.105 rows=200.00 loops=1)
+                           Buffers: shared hit=4
+                     ->  Hash  (cost=5.50..5.50 rows=180 width=8) (actual time=80.646..80.677 rows=180.00 loops=1)
+                           Buckets: 1024  Batches: 1  Memory Usage: 16kB
+                           Buffers: shared hit=3
+                           ->  Seq Scan on operator_profiles  (cost=0.00..5.50 rows=180 width=8) (actual time=80.569..80.608 rows=180.00 loops=1)
+                                 Filter: ((status)::text = 'approved'::text)
+                                 Rows Removed by Filter: 20
+                                 Buffers: shared hit=3
+ Planning:
+   Buffers: shared hit=445
+ Planning Time: 4.705 ms
+ JIT:
+   Functions: 55
+   Options: Inlining false, Optimization false, Expressions true, Deforming true
+   Timing: Generation 15.918 ms (Deform 1.649 ms), Inlining 0.000 ms, Optimization 5.842 ms, Emission 78.640 ms, Total 100.400 ms
+ Execution Time: 530.531 ms
+(51 rows)
+
+                                                                                         QUERY PLAN                                                                                          
+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Limit  (cost=210478.73..210478.76 rows=12 width=1220) (actual time=437.528..437.537 rows=12.00 loops=1)
+   Buffers: shared hit=12826
+   ->  Sort  (cost=210478.73..210563.41 rows=33869 width=1220) (actual time=404.642..404.649 rows=12.00 loops=1)
+         Sort Key: ((SubPlan 4)), tours.id
+         Sort Method: top-N heapsort  Memory: 29kB
+         Buffers: shared hit=12826
+         ->  Hash Semi Join  (cost=7630.68..209702.29 rows=33869 width=1220) (actual time=188.419..401.831 rows=2833.00 loops=1)
+               Hash Cond: (tours.operator_id = users.id)
+               Buffers: shared hit=12820
+               ->  Hash Join  (cost=7614.15..147879.07 rows=37632 width=1176) (actual time=188.118..360.918 rows=3666.00 loops=1)
+                     Hash Cond: (tours.id = departures.tour_id)
+                     Buffers: shared hit=4313
+                     ->  Seq Scan on tours  (cost=0.00..139728.00 rows=45053 width=1176) (actual time=3.232..171.705 rows=4167.00 loops=1)
+                           Filter: (((status)::text = 'published'::text) AND (((title)::text ~~* '%byb%'::text) OR (ANY (city_id = (hashed SubPlan 6).col1))))
+                           Rows Removed by Filter: 95833
+                           Buffers: shared hit=2229
+                           SubPlan 6
+                             ->  Seq Scan on cities  (cost=0.00..1.30 rows=1 width=8) (actual time=0.196..0.239 rows=1.00 loops=1)
+                                   Filter: ((name)::text ~~* '%byb%'::text)
+                                   Rows Removed by Filter: 23
+                                   Buffers: shared hit=1
+                     ->  Hash  (cost=6573.52..6573.52 rows=83250 width=8) (actual time=183.800..183.801 rows=85000.00 loops=1)
+                           Buckets: 131072  Batches: 1  Memory Usage: 4345kB
+                           Buffers: shared hit=2084
+                           ->  HashAggregate  (cost=5741.02..6573.52 rows=83250 width=8) (actual time=131.213..154.807 rows=85000.00 loops=1)
+                                 Group Key: departures.tour_id
+                                 Batches: 1  Memory Usage: 4121kB
+                                 Buffers: shared hit=2084
+                                 ->  Seq Scan on departures  (cost=0.00..5209.00 rows=212808 width=8) (actual time=0.079..44.627 rows=214000.00 loops=1)
+                                       Filter: (starts_on > '2026-11-26'::date)
+                                       Rows Removed by Filter: 36000
+                                       Buffers: shared hit=2084
+               ->  Hash  (cost=14.29..14.29 rows=180 width=16) (actual time=0.184..0.186 rows=180.00 loops=1)
+                     Buckets: 1024  Batches: 1  Memory Usage: 17kB
+                     Buffers: shared hit=7
+                     ->  Hash Join  (cost=7.75..14.29 rows=180 width=16) (actual time=0.106..0.157 rows=180.00 loops=1)
+                           Hash Cond: (users.id = operator_profiles.user_id)
+                           Buffers: shared hit=7
+                           ->  Seq Scan on users  (cost=0.00..6.00 rows=200 width=8) (actual time=0.013..0.030 rows=200.00 loops=1)
+                                 Buffers: shared hit=4
+                           ->  Hash  (cost=5.50..5.50 rows=180 width=8) (actual time=0.074..0.075 rows=180.00 loops=1)
+                                 Buckets: 1024  Batches: 1  Memory Usage: 16kB
+                                 Buffers: shared hit=3
+                                 ->  Seq Scan on operator_profiles  (cost=0.00..5.50 rows=180 width=8) (actual time=0.019..0.047 rows=180.00 loops=1)
+                                       Filter: ((status)::text = 'approved'::text)
+                                       Rows Removed by Filter: 20
+                                       Buffers: shared hit=3
+               SubPlan 1
+                 ->  Aggregate  (cost=0.01..0.01 rows=1 width=32) (actual time=0.004..0.004 rows=1.00 loops=2833)
+                       ->  Seq Scan on reviews  (cost=0.00..0.00 rows=1 width=2) (actual time=0.000..0.000 rows=0.00 loops=2833)
+                             Filter: (tours.id = tour_id)
+               SubPlan 2
+                 ->  Aggregate  (cost=0.00..0.01 rows=1 width=8) (actual time=0.002..0.002 rows=1.00 loops=2833)
+                       ->  Seq Scan on reviews reviews_1  (cost=0.00..0.00 rows=1 width=0) (actual time=0.000..0.000 rows=0.00 loops=2833)
+                             Filter: (tours.id = tour_id)
+               SubPlan 4
+                 ->  Result  (cost=1.77..1.78 rows=1 width=4) (actual time=0.006..0.006 rows=1.00 loops=2833)
+                       Buffers: shared hit=8500
+                       InitPlan 3
+                         ->  Limit  (cost=0.42..1.77 rows=1 width=4) (actual time=0.005..0.005 rows=1.00 loops=2833)
+                               Buffers: shared hit=8500
+                               ->  Index Only Scan using departures_one_per_day on departures departures_1  (cost=0.42..4.48 rows=3 width=4) (actual time=0.004..0.004 rows=1.00 loops=2833)
+                                     Index Cond: ((tour_id = tours.id) AND (starts_on > '2026-11-26'::date))
+                                     Heap Fetches: 0
+                                     Index Searches: 2833
+                                     Buffers: shared hit=8500
+ Planning:
+   Buffers: shared hit=110
+ Planning Time: 1.929 ms
+ JIT:
+   Functions: 71
+   Options: Inlining false, Optimization false, Expressions true, Deforming true
+   Timing: Generation 3.485 ms (Deform 1.120 ms), Inlining 0.000 ms, Optimization 1.943 ms, Emission 33.990 ms, Total 39.417 ms
+ Execution Time: 443.308 ms
+(74 rows)
+
+==================================================================
+TERM: by (2 characters)   pattern: %by%
+count query ms (runs 1-6): 457.421 668.107 426.188 477.922 462.404 734.418
+page query  ms (runs 1-6): 461.812 600.410 564.113 419.146 455.707 508.072
+------------------------------------------------------------------
+Pager usage is off.
+                                                                       QUERY PLAN                                                                       
+--------------------------------------------------------------------------------------------------------------------------------------------------------
+ Aggregate  (cost=148455.85..148455.86 rows=1 width=8) (actual time=664.516..664.530 rows=1.00 loops=1)
+   Buffers: shared hit=4320
+   ->  Hash Semi Join  (cost=7630.68..148371.18 rows=33869 width=0) (actual time=381.916..662.408 rows=2833.00 loops=1)
+         Hash Cond: (tours.operator_id = users.id)
+         Buffers: shared hit=4320
+         ->  Hash Join  (cost=7614.15..147879.07 rows=37632 width=8) (actual time=304.453..582.541 rows=3666.00 loops=1)
+               Hash Cond: (tours.id = departures.tour_id)
+               Buffers: shared hit=4313
+               ->  Seq Scan on tours  (cost=0.00..139728.00 rows=45053 width=16) (actual time=3.254..271.453 rows=4167.00 loops=1)
+                     Filter: (((status)::text = 'published'::text) AND (((title)::text ~~* '%by%'::text) OR (ANY (city_id = (hashed SubPlan 2).col1))))
+                     Rows Removed by Filter: 95833
+                     Buffers: shared hit=2229
+                     SubPlan 2
+                       ->  Seq Scan on cities  (cost=0.00..1.30 rows=4 width=8) (actual time=0.320..0.344 rows=1.00 loops=1)
+                             Filter: ((name)::text ~~* '%by%'::text)
+                             Rows Removed by Filter: 23
+                             Buffers: shared hit=1
+               ->  Hash  (cost=6573.52..6573.52 rows=83250 width=8) (actual time=300.234..300.236 rows=85000.00 loops=1)
+                     Buckets: 131072  Batches: 1  Memory Usage: 4345kB
+                     Buffers: shared hit=2084
+                     ->  HashAggregate  (cost=5741.02..6573.52 rows=83250 width=8) (actual time=250.646..270.803 rows=85000.00 loops=1)
+                           Group Key: departures.tour_id
+                           Batches: 1  Memory Usage: 4121kB
+                           Buffers: shared hit=2084
+                           ->  Seq Scan on departures  (cost=0.00..5209.00 rows=212808 width=8) (actual time=0.071..102.713 rows=214000.00 loops=1)
+                                 Filter: (starts_on > '2026-11-26'::date)
+                                 Rows Removed by Filter: 36000
+                                 Buffers: shared hit=2084
+         ->  Hash  (cost=14.29..14.29 rows=180 width=16) (actual time=77.409..77.418 rows=180.00 loops=1)
+               Buckets: 1024  Batches: 1  Memory Usage: 17kB
+               Buffers: shared hit=7
+               ->  Hash Join  (cost=7.75..14.29 rows=180 width=16) (actual time=77.280..77.369 rows=180.00 loops=1)
+                     Hash Cond: (users.id = operator_profiles.user_id)
+                     Buffers: shared hit=7
+                     ->  Seq Scan on users  (cost=0.00..6.00 rows=200 width=8) (actual time=0.029..0.056 rows=200.00 loops=1)
+                           Buffers: shared hit=4
+                     ->  Hash  (cost=5.50..5.50 rows=180 width=8) (actual time=77.196..77.204 rows=180.00 loops=1)
+                           Buckets: 1024  Batches: 1  Memory Usage: 16kB
+                           Buffers: shared hit=3
+                           ->  Seq Scan on operator_profiles  (cost=0.00..5.50 rows=180 width=8) (actual time=77.073..77.135 rows=180.00 loops=1)
+                                 Filter: ((status)::text = 'approved'::text)
+                                 Rows Removed by Filter: 20
+                                 Buffers: shared hit=3
+ Planning:
+   Buffers: shared hit=445
+ Planning Time: 12.066 ms
+ JIT:
+   Functions: 55
+   Options: Inlining false, Optimization false, Expressions true, Deforming true
+   Timing: Generation 7.838 ms (Deform 3.088 ms), Inlining 0.000 ms, Optimization 2.353 ms, Emission 77.769 ms, Total 87.960 ms
+ Execution Time: 734.418 ms
+(51 rows)
+
+                                                                                         QUERY PLAN                                                                                          
+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Limit  (cost=210478.73..210478.76 rows=12 width=1220) (actual time=501.825..501.834 rows=12.00 loops=1)
+   Buffers: shared hit=12826
+   ->  Sort  (cost=210478.73..210563.41 rows=33869 width=1220) (actual time=411.619..411.627 rows=12.00 loops=1)
+         Sort Key: ((SubPlan 4)), tours.id
+         Sort Method: top-N heapsort  Memory: 29kB
+         Buffers: shared hit=12826
+         ->  Hash Semi Join  (cost=7630.68..209702.29 rows=33869 width=1220) (actual time=193.974..408.845 rows=2833.00 loops=1)
+               Hash Cond: (tours.operator_id = users.id)
+               Buffers: shared hit=12820
+               ->  Hash Join  (cost=7614.15..147879.07 rows=37632 width=1176) (actual time=193.158..362.147 rows=3666.00 loops=1)
+                     Hash Cond: (tours.id = departures.tour_id)
+                     Buffers: shared hit=4313
+                     ->  Seq Scan on tours  (cost=0.00..139728.00 rows=45053 width=1176) (actual time=4.750..169.455 rows=4167.00 loops=1)
+                           Filter: (((status)::text = 'published'::text) AND (((title)::text ~~* '%by%'::text) OR (ANY (city_id = (hashed SubPlan 6).col1))))
+                           Rows Removed by Filter: 95833
+                           Buffers: shared hit=2229
+                           SubPlan 6
+                             ->  Seq Scan on cities  (cost=0.00..1.30 rows=4 width=8) (actual time=0.341..0.386 rows=1.00 loops=1)
+                                   Filter: ((name)::text ~~* '%by%'::text)
+                                   Rows Removed by Filter: 23
+                                   Buffers: shared hit=1
+                     ->  Hash  (cost=6573.52..6573.52 rows=83250 width=8) (actual time=186.669..186.670 rows=85000.00 loops=1)
+                           Buckets: 131072  Batches: 1  Memory Usage: 4345kB
+                           Buffers: shared hit=2084
+                           ->  HashAggregate  (cost=5741.02..6573.52 rows=83250 width=8) (actual time=141.136..162.248 rows=85000.00 loops=1)
+                                 Group Key: departures.tour_id
+                                 Batches: 1  Memory Usage: 4121kB
+                                 Buffers: shared hit=2084
+                                 ->  Seq Scan on departures  (cost=0.00..5209.00 rows=212808 width=8) (actual time=0.067..51.255 rows=214000.00 loops=1)
+                                       Filter: (starts_on > '2026-11-26'::date)
+                                       Rows Removed by Filter: 36000
+                                       Buffers: shared hit=2084
+               ->  Hash  (cost=14.29..14.29 rows=180 width=16) (actual time=0.686..0.688 rows=180.00 loops=1)
+                     Buckets: 1024  Batches: 1  Memory Usage: 17kB
+                     Buffers: shared hit=7
+                     ->  Hash Join  (cost=7.75..14.29 rows=180 width=16) (actual time=0.537..0.630 rows=180.00 loops=1)
+                           Hash Cond: (users.id = operator_profiles.user_id)
+                           Buffers: shared hit=7
+                           ->  Seq Scan on users  (cost=0.00..6.00 rows=200 width=8) (actual time=0.059..0.091 rows=200.00 loops=1)
+                                 Buffers: shared hit=4
+                           ->  Hash  (cost=5.50..5.50 rows=180 width=8) (actual time=0.389..0.390 rows=180.00 loops=1)
+                                 Buckets: 1024  Batches: 1  Memory Usage: 16kB
+                                 Buffers: shared hit=3
+                                 ->  Seq Scan on operator_profiles  (cost=0.00..5.50 rows=180 width=8) (actual time=0.278..0.333 rows=180.00 loops=1)
+                                       Filter: ((status)::text = 'approved'::text)
+                                       Rows Removed by Filter: 20
+                                       Buffers: shared hit=3
+               SubPlan 1
+                 ->  Aggregate  (cost=0.01..0.01 rows=1 width=32) (actual time=0.003..0.004 rows=1.00 loops=2833)
+                       ->  Seq Scan on reviews  (cost=0.00..0.00 rows=1 width=2) (actual time=0.001..0.001 rows=0.00 loops=2833)
+                             Filter: (tours.id = tour_id)
+               SubPlan 2
+                 ->  Aggregate  (cost=0.00..0.01 rows=1 width=8) (actual time=0.002..0.002 rows=1.00 loops=2833)
+                       ->  Seq Scan on reviews reviews_1  (cost=0.00..0.00 rows=1 width=0) (actual time=0.000..0.000 rows=0.00 loops=2833)
+                             Filter: (tours.id = tour_id)
+               SubPlan 4
+                 ->  Result  (cost=1.77..1.78 rows=1 width=4) (actual time=0.006..0.006 rows=1.00 loops=2833)
+                       Buffers: shared hit=8500
+                       InitPlan 3
+                         ->  Limit  (cost=0.42..1.77 rows=1 width=4) (actual time=0.005..0.005 rows=1.00 loops=2833)
+                               Buffers: shared hit=8500
+                               ->  Index Only Scan using departures_one_per_day on departures departures_1  (cost=0.42..4.48 rows=3 width=4) (actual time=0.005..0.005 rows=1.00 loops=2833)
+                                     Index Cond: ((tour_id = tours.id) AND (starts_on > '2026-11-26'::date))
+                                     Heap Fetches: 0
+                                     Index Searches: 2833
+                                     Buffers: shared hit=8500
+ Planning:
+   Buffers: shared hit=110
+ Planning Time: 1.969 ms
+ JIT:
+   Functions: 71
+   Options: Inlining false, Optimization false, Expressions true, Deforming true
+   Timing: Generation 4.266 ms (Deform 1.465 ms), Inlining 0.000 ms, Optimization 1.670 ms, Emission 92.859 ms, Total 98.795 ms
+ Execution Time: 508.072 ms
+(74 rows)
+
+==================================================================
+TERM: 100% (escaped wildcard)   pattern: %100\%%
+count query ms (runs 1-6): 444.754 272.117 290.115 355.190 230.908 452.184
+page query  ms (runs 1-6): 408.166 165.736 193.478 247.376 201.524 232.098
+------------------------------------------------------------------
+Pager usage is off.
+                                                                        QUERY PLAN                                                                         
+-----------------------------------------------------------------------------------------------------------------------------------------------------------
+ Aggregate  (cost=148455.85..148455.86 rows=1 width=8) (actual time=421.059..421.066 rows=1.00 loops=1)
+   Buffers: shared hit=2236
+   ->  Hash Semi Join  (cost=7630.68..148371.18 rows=33869 width=0) (actual time=421.012..421.019 rows=0.00 loops=1)
+         Hash Cond: (tours.operator_id = users.id)
+         Buffers: shared hit=2236
+         ->  Hash Join  (cost=7614.15..147879.07 rows=37632 width=8) (actual time=347.419..347.423 rows=0.00 loops=1)
+               Hash Cond: (tours.id = departures.tour_id)
+               Buffers: shared hit=2229
+               ->  Seq Scan on tours  (cost=0.00..139728.00 rows=45053 width=16) (actual time=347.417..347.418 rows=0.00 loops=1)
+                     Filter: (((status)::text = 'published'::text) AND (((title)::text ~~* '%100\%%'::text) OR (ANY (city_id = (hashed SubPlan 2).col1))))
+                     Rows Removed by Filter: 100000
+                     Buffers: shared hit=2229
+                     SubPlan 2
+                       ->  Seq Scan on cities  (cost=0.00..1.30 rows=1 width=8) (actual time=0.342..0.342 rows=0.00 loops=1)
+                             Filter: ((name)::text ~~* '%100\%%'::text)
+                             Rows Removed by Filter: 24
+                             Buffers: shared hit=1
+               ->  Hash  (cost=6573.52..6573.52 rows=83250 width=8) (never executed)
+                     ->  HashAggregate  (cost=5741.02..6573.52 rows=83250 width=8) (never executed)
+                           Group Key: departures.tour_id
+                           ->  Seq Scan on departures  (cost=0.00..5209.00 rows=212808 width=8) (never executed)
+                                 Filter: (starts_on > '2026-11-26'::date)
+         ->  Hash  (cost=14.29..14.29 rows=180 width=16) (actual time=73.566..73.569 rows=180.00 loops=1)
+               Buckets: 1024  Batches: 1  Memory Usage: 17kB
+               Buffers: shared hit=7
+               ->  Hash Join  (cost=7.75..14.29 rows=180 width=16) (actual time=73.365..73.501 rows=180.00 loops=1)
+                     Hash Cond: (users.id = operator_profiles.user_id)
+                     Buffers: shared hit=7
+                     ->  Seq Scan on users  (cost=0.00..6.00 rows=200 width=8) (actual time=0.029..0.088 rows=200.00 loops=1)
+                           Buffers: shared hit=4
+                     ->  Hash  (cost=5.50..5.50 rows=180 width=8) (actual time=73.291..73.292 rows=180.00 loops=1)
+                           Buckets: 1024  Batches: 1  Memory Usage: 16kB
+                           Buffers: shared hit=3
+                           ->  Seq Scan on operator_profiles  (cost=0.00..5.50 rows=180 width=8) (actual time=73.142..73.217 rows=180.00 loops=1)
+                                 Filter: ((status)::text = 'approved'::text)
+                                 Rows Removed by Filter: 20
+                                 Buffers: shared hit=3
+ Planning:
+   Buffers: shared hit=445
+ Planning Time: 2.777 ms
+ JIT:
+   Functions: 55
+   Options: Inlining false, Optimization false, Expressions true, Deforming true
+   Timing: Generation 4.117 ms (Deform 1.263 ms), Inlining 0.000 ms, Optimization 2.196 ms, Emission 71.261 ms, Total 77.574 ms
+ Execution Time: 452.184 ms
+(45 rows)
+
+                                                                           QUERY PLAN                                                                            
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Limit  (cost=210478.73..210478.76 rows=12 width=1220) (actual time=224.434..224.460 rows=0.00 loops=1)
+   Buffers: shared hit=2242
+   ->  Sort  (cost=210478.73..210563.41 rows=33869 width=1220) (actual time=142.225..142.251 rows=0.00 loops=1)
+         Sort Key: ((SubPlan 4)), tours.id
+         Sort Method: quicksort  Memory: 25kB
+         Buffers: shared hit=2242
+         ->  Hash Semi Join  (cost=7630.68..209702.29 rows=33869 width=1220) (actual time=142.161..142.186 rows=0.00 loops=1)
+               Hash Cond: (tours.operator_id = users.id)
+               Buffers: shared hit=2236
+               ->  Hash Join  (cost=7614.15..147879.07 rows=37632 width=1176) (actual time=141.811..141.814 rows=0.00 loops=1)
+                     Hash Cond: (tours.id = departures.tour_id)
+                     Buffers: shared hit=2229
+                     ->  Seq Scan on tours  (cost=0.00..139728.00 rows=45053 width=1176) (actual time=141.810..141.811 rows=0.00 loops=1)
+                           Filter: (((status)::text = 'published'::text) AND (((title)::text ~~* '%100\%%'::text) OR (ANY (city_id = (hashed SubPlan 6).col1))))
+                           Rows Removed by Filter: 100000
+                           Buffers: shared hit=2229
+                           SubPlan 6
+                             ->  Seq Scan on cities  (cost=0.00..1.30 rows=1 width=8) (actual time=0.282..0.283 rows=0.00 loops=1)
+                                   Filter: ((name)::text ~~* '%100\%%'::text)
+                                   Rows Removed by Filter: 24
+                                   Buffers: shared hit=1
+                     ->  Hash  (cost=6573.52..6573.52 rows=83250 width=8) (never executed)
+                           ->  HashAggregate  (cost=5741.02..6573.52 rows=83250 width=8) (never executed)
+                                 Group Key: departures.tour_id
+                                 ->  Seq Scan on departures  (cost=0.00..5209.00 rows=212808 width=8) (never executed)
+                                       Filter: (starts_on > '2026-11-26'::date)
+               ->  Hash  (cost=14.29..14.29 rows=180 width=16) (actual time=0.343..0.362 rows=180.00 loops=1)
+                     Buckets: 1024  Batches: 1  Memory Usage: 17kB
+                     Buffers: shared hit=7
+                     ->  Hash Join  (cost=7.75..14.29 rows=180 width=16) (actual time=0.188..0.304 rows=180.00 loops=1)
+                           Hash Cond: (users.id = operator_profiles.user_id)
+                           Buffers: shared hit=7
+                           ->  Seq Scan on users  (cost=0.00..6.00 rows=200 width=8) (actual time=0.031..0.062 rows=200.00 loops=1)
+                                 Buffers: shared hit=4
+                           ->  Hash  (cost=5.50..5.50 rows=180 width=8) (actual time=0.136..0.153 rows=180.00 loops=1)
+                                 Buckets: 1024  Batches: 1  Memory Usage: 16kB
+                                 Buffers: shared hit=3
+                                 ->  Seq Scan on operator_profiles  (cost=0.00..5.50 rows=180 width=8) (actual time=0.022..0.080 rows=180.00 loops=1)
+                                       Filter: ((status)::text = 'approved'::text)
+                                       Rows Removed by Filter: 20
+                                       Buffers: shared hit=3
+               SubPlan 1
+                 ->  Aggregate  (cost=0.01..0.01 rows=1 width=32) (never executed)
+                       ->  Seq Scan on reviews  (cost=0.00..0.00 rows=1 width=2) (never executed)
+                             Filter: (tours.id = tour_id)
+               SubPlan 2
+                 ->  Aggregate  (cost=0.00..0.01 rows=1 width=8) (never executed)
+                       ->  Seq Scan on reviews reviews_1  (cost=0.00..0.00 rows=1 width=0) (never executed)
+                             Filter: (tours.id = tour_id)
+               SubPlan 4
+                 ->  Result  (cost=1.77..1.78 rows=1 width=4) (never executed)
+                       InitPlan 3
+                         ->  Limit  (cost=0.42..1.77 rows=1 width=4) (never executed)
+                               ->  Index Only Scan using departures_one_per_day on departures departures_1  (cost=0.42..4.48 rows=3 width=4) (never executed)
+                                     Index Cond: ((tour_id = tours.id) AND (starts_on > '2026-11-26'::date))
+                                     Heap Fetches: 0
+                                     Index Searches: 0
+ Planning:
+   Buffers: shared hit=110
+ Planning Time: 6.742 ms
+ JIT:
+   Functions: 71
+   Options: Inlining false, Optimization false, Expressions true, Deforming true
+   Timing: Generation 5.313 ms (Deform 1.731 ms), Inlining 0.000 ms, Optimization 2.155 ms, Emission 80.296 ms, Total 87.765 ms
+ Execution Time: 232.098 ms
+(65 rows)
+
+==================================================================
+TERM: qqqzzz (no match)   pattern: %qqqzzz%
+count query ms (runs 1-6): 269.124 214.151 234.234 281.400 233.398 309.622
+page query  ms (runs 1-6): 261.255 164.667 220.136 214.069 161.158 193.539
+------------------------------------------------------------------
+Pager usage is off.
+                                                                         QUERY PLAN                                                                         
+------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Aggregate  (cost=148455.85..148455.86 rows=1 width=8) (actual time=229.327..229.333 rows=1.00 loops=1)
+   Buffers: shared hit=2236
+   ->  Hash Semi Join  (cost=7630.68..148371.18 rows=33869 width=0) (actual time=229.293..229.298 rows=0.00 loops=1)
+         Hash Cond: (tours.operator_id = users.id)
+         Buffers: shared hit=2236
+         ->  Hash Join  (cost=7614.15..147879.07 rows=37632 width=8) (actual time=146.099..146.102 rows=0.00 loops=1)
+               Hash Cond: (tours.id = departures.tour_id)
+               Buffers: shared hit=2229
+               ->  Seq Scan on tours  (cost=0.00..139728.00 rows=45053 width=16) (actual time=146.097..146.099 rows=0.00 loops=1)
+                     Filter: (((status)::text = 'published'::text) AND (((title)::text ~~* '%qqqzzz%'::text) OR (ANY (city_id = (hashed SubPlan 2).col1))))
+                     Rows Removed by Filter: 100000
+                     Buffers: shared hit=2229
+                     SubPlan 2
+                       ->  Seq Scan on cities  (cost=0.00..1.30 rows=1 width=8) (actual time=0.302..0.302 rows=0.00 loops=1)
+                             Filter: ((name)::text ~~* '%qqqzzz%'::text)
+                             Rows Removed by Filter: 24
+                             Buffers: shared hit=1
+               ->  Hash  (cost=6573.52..6573.52 rows=83250 width=8) (never executed)
+                     ->  HashAggregate  (cost=5741.02..6573.52 rows=83250 width=8) (never executed)
+                           Group Key: departures.tour_id
+                           ->  Seq Scan on departures  (cost=0.00..5209.00 rows=212808 width=8) (never executed)
+                                 Filter: (starts_on > '2026-11-26'::date)
+         ->  Hash  (cost=14.29..14.29 rows=180 width=16) (actual time=83.048..83.050 rows=180.00 loops=1)
+               Buckets: 1024  Batches: 1  Memory Usage: 17kB
+               Buffers: shared hit=7
+               ->  Hash Join  (cost=7.75..14.29 rows=180 width=16) (actual time=82.961..83.015 rows=180.00 loops=1)
+                     Hash Cond: (users.id = operator_profiles.user_id)
+                     Buffers: shared hit=7
+                     ->  Seq Scan on users  (cost=0.00..6.00 rows=200 width=8) (actual time=0.028..0.048 rows=200.00 loops=1)
+                           Buffers: shared hit=4
+                     ->  Hash  (cost=5.50..5.50 rows=180 width=8) (actual time=82.520..82.521 rows=180.00 loops=1)
+                           Buckets: 1024  Batches: 1  Memory Usage: 16kB
+                           Buffers: shared hit=3
+                           ->  Seq Scan on operator_profiles  (cost=0.00..5.50 rows=180 width=8) (actual time=82.367..82.445 rows=180.00 loops=1)
+                                 Filter: ((status)::text = 'approved'::text)
+                                 Rows Removed by Filter: 20
+                                 Buffers: shared hit=3
+ Planning:
+   Buffers: shared hit=445
+ Planning Time: 4.160 ms
+ JIT:
+   Functions: 55
+   Options: Inlining false, Optimization false, Expressions true, Deforming true
+   Timing: Generation 17.852 ms (Deform 7.942 ms), Inlining 0.000 ms, Optimization 9.480 ms, Emission 73.091 ms, Total 100.422 ms
+ Execution Time: 309.622 ms
+(45 rows)
+
+                                                                            QUERY PLAN                                                                            
+------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Limit  (cost=210478.73..210478.76 rows=12 width=1220) (actual time=187.509..187.537 rows=0.00 loops=1)
+   Buffers: shared hit=2242
+   ->  Sort  (cost=210478.73..210563.41 rows=33869 width=1220) (actual time=150.723..150.750 rows=0.00 loops=1)
+         Sort Key: ((SubPlan 4)), tours.id
+         Sort Method: quicksort  Memory: 25kB
+         Buffers: shared hit=2242
+         ->  Hash Semi Join  (cost=7630.68..209702.29 rows=33869 width=1220) (actual time=150.673..150.700 rows=0.00 loops=1)
+               Hash Cond: (tours.operator_id = users.id)
+               Buffers: shared hit=2236
+               ->  Hash Join  (cost=7614.15..147879.07 rows=37632 width=1176) (actual time=150.500..150.502 rows=0.00 loops=1)
+                     Hash Cond: (tours.id = departures.tour_id)
+                     Buffers: shared hit=2229
+                     ->  Seq Scan on tours  (cost=0.00..139728.00 rows=45053 width=1176) (actual time=150.499..150.499 rows=0.00 loops=1)
+                           Filter: (((status)::text = 'published'::text) AND (((title)::text ~~* '%qqqzzz%'::text) OR (ANY (city_id = (hashed SubPlan 6).col1))))
+                           Rows Removed by Filter: 100000
+                           Buffers: shared hit=2229
+                           SubPlan 6
+                             ->  Seq Scan on cities  (cost=0.00..1.30 rows=1 width=8) (actual time=0.339..0.339 rows=0.00 loops=1)
+                                   Filter: ((name)::text ~~* '%qqqzzz%'::text)
+                                   Rows Removed by Filter: 24
+                                   Buffers: shared hit=1
+                     ->  Hash  (cost=6573.52..6573.52 rows=83250 width=8) (never executed)
+                           ->  HashAggregate  (cost=5741.02..6573.52 rows=83250 width=8) (never executed)
+                                 Group Key: departures.tour_id
+                                 ->  Seq Scan on departures  (cost=0.00..5209.00 rows=212808 width=8) (never executed)
+                                       Filter: (starts_on > '2026-11-26'::date)
+               ->  Hash  (cost=14.29..14.29 rows=180 width=16) (actual time=0.169..0.191 rows=180.00 loops=1)
+                     Buckets: 1024  Batches: 1  Memory Usage: 17kB
+                     Buffers: shared hit=7
+                     ->  Hash Join  (cost=7.75..14.29 rows=180 width=16) (actual time=0.099..0.166 rows=180.00 loops=1)
+                           Hash Cond: (users.id = operator_profiles.user_id)
+                           Buffers: shared hit=7
+                           ->  Seq Scan on users  (cost=0.00..6.00 rows=200 width=8) (actual time=0.021..0.038 rows=200.00 loops=1)
+                                 Buffers: shared hit=4
+                           ->  Hash  (cost=5.50..5.50 rows=180 width=8) (actual time=0.066..0.087 rows=180.00 loops=1)
+                                 Buckets: 1024  Batches: 1  Memory Usage: 16kB
+                                 Buffers: shared hit=3
+                                 ->  Seq Scan on operator_profiles  (cost=0.00..5.50 rows=180 width=8) (actual time=0.015..0.039 rows=180.00 loops=1)
+                                       Filter: ((status)::text = 'approved'::text)
+                                       Rows Removed by Filter: 20
+                                       Buffers: shared hit=3
+               SubPlan 1
+                 ->  Aggregate  (cost=0.01..0.01 rows=1 width=32) (never executed)
+                       ->  Seq Scan on reviews  (cost=0.00..0.00 rows=1 width=2) (never executed)
+                             Filter: (tours.id = tour_id)
+               SubPlan 2
+                 ->  Aggregate  (cost=0.00..0.01 rows=1 width=8) (never executed)
+                       ->  Seq Scan on reviews reviews_1  (cost=0.00..0.00 rows=1 width=0) (never executed)
+                             Filter: (tours.id = tour_id)
+               SubPlan 4
+                 ->  Result  (cost=1.77..1.78 rows=1 width=4) (never executed)
+                       InitPlan 3
+                         ->  Limit  (cost=0.42..1.77 rows=1 width=4) (never executed)
+                               ->  Index Only Scan using departures_one_per_day on departures departures_1  (cost=0.42..4.48 rows=3 width=4) (never executed)
+                                     Index Cond: ((tour_id = tours.id) AND (starts_on > '2026-11-26'::date))
+                                     Heap Fetches: 0
+                                     Index Searches: 0
+ Planning:
+   Buffers: shared hit=110
+ Planning Time: 1.489 ms
+ JIT:
+   Functions: 71
+   Options: Inlining false, Optimization false, Expressions true, Deforming true
+   Timing: Generation 4.118 ms (Deform 1.349 ms), Inlining 0.000 ms, Optimization 2.023 ms, Emission 35.041 ms, Total 41.183 ms
+ Execution Time: 193.539 ms
+(65 rows)
+

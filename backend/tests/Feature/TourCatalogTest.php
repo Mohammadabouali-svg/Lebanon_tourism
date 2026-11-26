@@ -158,6 +158,49 @@ class TourCatalogTest extends TestCase
         $this->getJson('/api/tours?search=byb')->assertJsonCount(1, 'data');
     }
 
+    /*
+    | Exercise 11 characterisation tests: they pin today's "contains"
+    | semantics, so a faster search (trigram index, query rewrite) cannot
+    | quietly change what travelers find. Full-text search would fail them.
+    | Titles and cities are set explicitly so Faker words cannot match.
+    */
+    public function test_search_matches_a_substring_inside_a_word_ignoring_case(): void
+    {
+        $city = City::factory()->create(['name' => 'Bsharri']);
+        $match = Tour::factory()->for($city)->withDeparture()->create(['title' => 'Walk the Qadisha valley']);
+        Tour::factory()->for($city)->withDeparture()->create(['title' => 'Cedar forest picnic']);
+
+        $this->getJson('/api/tours?search=DISH')
+            ->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.id', $match->id);
+    }
+
+    public function test_search_with_a_two_letter_term_still_matches(): void
+    {
+        $city = City::factory()->create(['name' => 'Tyre']);
+        $match = Tour::factory()->for($city)->withDeparture()->create(['title' => 'Old souk walk']);
+        Tour::factory()->for($city)->withDeparture()->create(['title' => 'Harbour by boat']);
+
+        $this->getJson('/api/tours?search=uk')
+            ->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.id', $match->id);
+    }
+
+    public function test_search_returns_tours_matching_the_title_or_the_city_together(): void
+    {
+        $byblos = City::factory()->create(['name' => 'Byblos']);
+        $tyre = City::factory()->create(['name' => 'Tyre']);
+        $byCity = Tour::factory()->for($byblos)->withDeparture(['starts_on' => $this->inDays(5)])->create(['title' => 'Old souk walk']);
+        $byTitle = Tour::factory()->for($tyre)->withDeparture(['starts_on' => $this->inDays(10)])->create(['title' => 'Byblos day trip']);
+        Tour::factory()->for($tyre)->withDeparture()->create(['title' => 'Harbour by boat']);
+
+        $this->getJson('/api/tours?search=byblos')
+            ->assertJsonCount(2, 'data')
+            ->assertJsonPath('data.0.id', $byCity->id)
+            ->assertJsonPath('data.1.id', $byTitle->id)
+            ->assertJsonPath('meta.total', 2);
+    }
+
     public function test_duration_buckets_have_no_gaps(): void
     {
         foreach ([1, 3, 4, 7, 8, 14, 15, 21] as $days) {

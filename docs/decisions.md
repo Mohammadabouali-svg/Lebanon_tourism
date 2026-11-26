@@ -177,7 +177,8 @@ being built: e-mail address change with re-verification (since built in
 Exercise 4, see D20), cleanup of stale
 `pending` card bookings (since built in Exercise 5, see D18), a real Stripe
 driver, recurring departures (since built in Exercise 10, see D23), full-text
-search, admin "lock" on moderated tours (since built in Exercise 6, see D19).
+search (Exercise 11 made the search fast with trigram indexes instead, see
+D24), admin "lock" on moderated tours (since built in Exercise 6, see D19).
 See [10-exercises.md](10-exercises.md).
 
 ## D17. The tour price cap is validation only, not a database constraint
@@ -608,3 +609,74 @@ pair to check).
 - Moving a booked departure to another date (with traveler notification),
   cancelling a departure with refunds, per-departure prices and a date
   filter in the catalogue are follow-ups.
+
+## D24. Fast search: trigram GIN index, city ids bound as values
+
+**Context.** The public search (`GET /api/tours?search=`) is "the title or
+the city name contains the term, ignoring case": `title ILIKE '%term%' OR
+EXISTS (cities whose name matches)`. A btree index cannot answer a pattern
+starting with `%`, and `tours` had no index besides its primary key (Postgres
+does not index foreign keys). Exercise 11 asks to try `pg_trgm` or full-text
+search and to measure on 100,000 tours.
+
+**Decision.**
+- Extension `pg_trgm` and a GIN index `tours_title_trgm ON tours USING gin
+  (title gin_trgm_ops)`, plus a btree `tours_city_id_index`, in one migration
+  (`2026_11_26_000400_add_search_indexes_to_tours`), inside its transaction
+  (not `CONCURRENTLY`). `down()` drops both indexes and the extension, without
+  `CASCADE`.
+- `TourController::index()` looks up the matching city ids first (`cities`
+  has ~25 rows) and searches `title ILIKE ? OR city_id IN (?, ...)`, or only
+  the title when no city matches. The results are identical: every tour has
+  exactly one city.
+- Nothing special for terms under 3 characters: they keep working and scan.
+
+**Why.** Measured on 100,000 generated tours, 250,000 departures
+(`backend/database/benchmarks/`, median of 5 warm runs):
+
+| Term | Tours found | COUNT before → after | Page before → after | Plan on `tours` after |
+|---|---|---|---|---|
+| hike (5% of titles) | 4,500 | 485 → 59 ms | 431 → 83 ms | BitmapOr (trgm + city_id) |
+| zaatar (10 titles) | 10 | 386 → 3.9 ms | 453 → 1.3 ms | Bitmap (trgm) |
+| byb (a city) | 4,167 | 531 → 27 ms | 511 → 38 ms | BitmapOr |
+| by (2 letters) | 4,167 | 478 → 109 ms | 508 → 100 ms | Seq Scan (no trigram) |
+| no match | 0 | 234 → 0.5 ms | 194 → 0.5 ms | Bitmap (trgm) |
+
+Before, every query read all 100,000 tours. The index alone changed nothing:
+with `OR EXISTS (...)` (which Postgres turns into a hashed subplan) one side of
+the `OR` has no index, so a `BitmapOr` is impossible and the planner keeps the
+sequential scan, as `test_the_planner_can_use_the_trigram_index_for_the_public_search`
+proved (red with the index in place). Rewriting the city side as
+`city_id = ANY (ARRAY(subquery))` made the index usable but left the planner
+guessing: it estimated 34,662 matching tours for a city side that matched none,
+and picked a full scan of `departures`. Bound ids give it real numbers, so for
+few matches it checks departures through `departures_one_per_day` per tour.
+That is also why "by" got faster without using the trigram index. The `::text`
+cast Laravel adds (`"title"::text ilike ?`) does not block the index.
+
+`pg_trgm` keeps the exact `ILIKE` semantics (the trigram match is re-checked),
+so substring search ("byb", "dish" in "Qadisha") and escaped wildcards
+("100%") behave as before. It ships with Postgres and is a *trusted*
+extension (PG 13+): the database owner can create it without superuser
+rights. GIN reads faster than GiST and writes slower; tours are read far more
+often than saved. `CONCURRENTLY` cannot run in a transaction; the lock on a
+table of this size lasts milliseconds, and an all-or-nothing migration is
+worth more here.
+
+**Rejected.** Full-text search (`tsvector`, `simple` or `english`): matches
+words or prefixes, not substrings; "byb" would stop finding Byblos (a product
+change, and `test_search_also_matches_the_city_name` would fail). Both
+mechanisms: two things to maintain for no requirement. GiST: slower reads.
+A trigram index on `cities.name`: 25 rows are faster to scan. `ARRAY(subquery)`
+in one query: wrong estimates (above). A minimum search length of 3: would
+change what users can search for. `CREATE INDEX CONCURRENTLY`: see above.
+
+**Consequences.**
+- A search runs one more tiny query (the city lookup, ~0.1 ms).
+- Every tour insert or title change also updates the GIN index (slightly
+  slower writes).
+- Terms under 3 characters still scan `tours` (about 100 ms at 100,000 tours).
+- Follow-ups, not done: the admin searches (tours by title, users by name and
+  e-mail, bookings by reference and traveler) still use unindexed `ILIKE`;
+  `tours.operator_id` and `tours.category_id` have no index; the "Hike" page
+  query still sorts every match by its next departure.

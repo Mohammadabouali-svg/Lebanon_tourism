@@ -180,8 +180,40 @@ than loading every booking into PHP.
 **Indexes** exist for the columns used in `WHERE` and `ORDER BY` of frequent
 queries (e.g. `departures (tour_id, starts_on)`, the unique index that also
 answers "does this tour have an upcoming date?" and "when is its next date?"
-for the public listing). Foreign
-keys are indexed by `foreignId()->constrained()`.
+for the public listing).
+
+**Foreign keys are *not* indexed automatically.** MySQL creates an index for
+every foreign key; Postgres does not, and `foreignId()->constrained()` only
+adds the constraint. A foreign key column gets an index only when a migration
+asks for one, or when it leads a unique or composite index (e.g.
+`departures (tour_id, starts_on)`). Add one when a frequent query filters or
+joins on the column, and measure first: `tours.city_id` got its index in
+Exercise 11 because the search needed it; `tours.operator_id` and
+`tours.category_id` have none yet.
+
+**Fast "contains" search (Exercise 11, D24).** The public search is
+`title ILIKE '%term%' OR city_id IN (...)`. A btree index cannot answer a
+pattern that starts with `%`, so Postgres read every tour. Two indexes and one
+query change fix it:
+
+- `tours_title_trgm`, a GIN index from the `pg_trgm` extension. It splits text
+  into three-letter pieces ("hik", "ike", ...) and finds the rows that contain
+  every piece of the term; Postgres then re-checks the real `ILIKE` on those
+  rows, so results are exactly what `ILIKE` gives. Full-text search
+  (`to_tsvector`) was rejected: it matches whole words, so "byb" would no
+  longer find Byblos.
+- `tours_city_id_index`. An `OR` can only be answered from indexes (a
+  `BitmapOr`) when **both** sides have one.
+- The matching cities are looked up first and their ids bound as values. With
+  `OR EXISTS (select ... from cities ...)` Postgres can use neither index, and
+  with a subquery it has to guess how many tours match.
+
+Terms shorter than three letters (e.g. "by") have no trigram and still scan
+the table. Always check with `EXPLAIN ANALYZE` on realistic data: on a few
+rows a sequential scan is always cheapest, so the plan of a dev database says
+nothing. The 100,000-tour benchmark lives in
+[`backend/database/benchmarks/`](../backend/database/benchmarks/) and its
+results in [exercises/11-faster-search.md](exercises/11-faster-search.md).
 
 ## Strict mode and model defaults: a lesson from building this project
 

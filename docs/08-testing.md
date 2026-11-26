@@ -27,7 +27,8 @@ backend/tests/
     ├── Admin/                   wallet credits, suspensions, approvals, moderation
     ├── AccessControlTest.php    who may call what
     ├── ReviewTest.php           review rules, photo uploads and cleanup, photo migration
-    └── TourCatalogTest.php      public listing, filters, search
+    ├── TourCatalogTest.php      public listing, filters, search
+    └── TourSearchIndexTest.php  the search indexes exist and the planner can use them
 ```
 
 - **Unit tests** check one function in isolation. Fast, good for edge cases

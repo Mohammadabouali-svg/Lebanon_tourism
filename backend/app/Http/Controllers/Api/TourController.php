@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\TourIndexRequest;
 use App\Http\Resources\TourResource;
+use App\Models\City;
 use App\Models\Review;
 use App\Models\Tour;
 use App\Support\Search;
@@ -30,7 +31,8 @@ class TourController extends Controller
             ->visibleToPublic()
             // At least one departure that has not started (Exercise 10).
             ->upcoming()
-            // Eager loading: 5 queries in total, whatever the page size.
+            // Eager loading: 5 queries in total, whatever the page size
+            // (plus the paginate() COUNT, and the city lookup of a search).
             // Without with(), every tour would trigger 4 more queries ("N+1").
             // A tour runs on a handful of upcoming dates, so loading them all
             // for the card (next date, "N more dates", sold out) stays small.
@@ -39,9 +41,20 @@ class TourController extends Controller
             ->withCount('reviews')
             ->when($filters['search'] ?? null, function (Builder $query, string $term) {
                 $pattern = Search::containsPattern($term);
+                /*
+                | "Title or city name contains the term". The matching cities
+                | (a table of ~25 rows) are looked up first and their ids
+                | bound as values, instead of `OR EXISTS (cities ...)`:
+                | with a subquery on one side of the OR, Postgres can use
+                | neither tours_title_trgm nor tours_city_id_index and reads
+                | every tour; with known ids it combines both indexes and
+                | estimates the row count correctly (Exercise 11, D24).
+                | Same result: every tour has exactly one city (NOT NULL).
+                */
+                $cityIds = City::query()->whereLike('name', $pattern)->pluck('id');
                 $query->where(fn (Builder $q) => $q
                     ->whereLike('title', $pattern)
-                    ->orWhereHas('city', fn (Builder $city) => $city->whereLike('name', $pattern)));
+                    ->when($cityIds->isNotEmpty(), fn (Builder $q) => $q->orWhereIn('city_id', $cityIds)));
             })
             ->when($filters['region_id'] ?? null, fn (Builder $query, int $regionId) => $query
                 ->whereHas('city', fn (Builder $city) => $city->where('region_id', $regionId)))

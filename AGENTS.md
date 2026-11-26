@@ -412,7 +412,7 @@ browser redirect → card data never touches our server.
 
 | Need | Read |
 |---|---|
-| Why a choice was made | `docs/decisions.md` (D1–D23) |
+| Why a choice was made | `docs/decisions.md` (D1–D24) |
 | Setup / troubleshooting | `docs/01-getting-started.md` |
 | Request path, folder map | `docs/02-architecture.md` |
 | Sessions, CSRF, roles, policies | `docs/03-authentication.md` |
@@ -428,10 +428,11 @@ browser redirect → card data never touches our server.
 ## 11. Current work: the exercises (`docs/10-exercises.md`)
 
 Agreed order: reading exercises first, then 1 → 2 → 3, then 5, 6, 4, 8, 7,
-then 10, 12, 11, 9. Recurring departures (#10) was first planned last,
+then 10, 11, 12, 9. Recurring departures (#10) was first planned last,
 because it refactors the booking/capacity code that #5 and #9 depend on; the
 user chose to do it before 12, 11 and 9, so #9 (Stripe) now builds on
-departures. Update the status column as work lands.
+departures. The user then chose #11 (faster search) before #12 (audit log).
+Update the status column as work lands.
 
 | # | Exercise | Key notes | Status |
 |---|---|---|---|
@@ -445,7 +446,7 @@ departures. Update the status column as work lands.
 | 8 | Review photos | `review_photos` (FK cascade, CHECK `review_photos_position_range` 1..3 + unique `(review_id, position)`); `photo_path` copied as position 1 then dropped (`2026_11_25_000300`/`000400`, `down()` restores position 1); `photo_url` → `photos: [{id, url}]`, request `photos[]` (`max:3`, 5 MB each); request limit 20 MB (`app.ini`, nginx dev + prod); `ReviewService` stores files first, deletes them on any failure, deletes files after commit on review delete (D21); 26 tests in `ReviewTest` | done: verified 2026-11-25 (160 tests, pint, build, lint, manual check traveler 3 photos + 4th refused + delete OK) |
 | 7 | CSP header | `docker/nginx/security-headers.conf` included at server level + every location with its own `add_header` (fixes headers missing on `index.html`, bundles, `/storage`); page CSP `default-src 'self'`, `img-src 'self' blob:`, no `unsafe-*`; other responses `default-src 'none'`; enforced, no dev CSP (D22) | done: verified 2026-11-25 (curl -I all locations, browser console clean as guest/traveler/operator/admin on prod stack) |
 | 12 | Audit log | `audit_events` for admin actions + admin page | todo |
-| 11 | Faster search | `pg_trgm` GIN or `tsvector`; `EXPLAIN ANALYZE` on 100k tours | todo |
+| 11 | Faster search | `pg_trgm` GIN `tours_title_trgm` + `tours_city_id_index` (migration `2026_11_26_000400`, `down()` drops the extension without CASCADE); search looks up city ids first, then `title ILIKE ? OR city_id IN (...)` (an `OR EXISTS` blocks both indexes); same semantics, no FTS; benchmark scripts in `backend/database/benchmarks/` (100k tours, throwaway DB `lebanon_tourism_bench`); 3 characterisation tests in `TourCatalogTest`, 3 in `TourSearchIndexTest` (planner checked with `enable_seqscan = off`) (D24) | done: verified 2026-11-26 (see write-up) |
 | 9 | Stripe gateway | Checkout + signed webhook confirms; bind when `PAYMENT_GATEWAY=stripe` | todo |
 | 10 | Recurring departures | `departures (tour_id, starts_on, capacity, booked_spots)`, length stays on the tour (`duration_days` plain, 1..30); expand → migrate → contract (`2026_11_26_000100`/`000200`/`000300`), `down()` refuses unless one departure per tour; `bookings.departure_id` + kept `tour_id` with composite FK; booking/quote at `POST /api/departures/{departure}/...`; locks tour FOR SHARE then departure FOR UPDATE; operator CRUD + weekly series (`weeks` ≤ 26), codes `departure_has_bookings`, `departure_started` (D23) | done: verified 2026-11-25 (204 tests, pint, build, lint, manual check guest/traveler/operator/admin; dev rollback + re-migrate identical) |
 
