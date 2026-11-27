@@ -2,7 +2,7 @@ import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tansta
 import { referenceDataKey, tourKeys } from '@/features/tours/queries'
 import { api } from '@/lib/api'
 import type {
-  AdminDashboard, Booking, Category, City, Discount, DiscountType, Envelope, Paginated, Region, Tour, TourStatus, User,
+  AdminDashboard, AuditEvent, Booking, Category, City, Discount, DiscountType, Envelope, Paginated, Region, Tour, TourStatus, User,
 } from '@/lib/types'
 
 /*
@@ -77,6 +77,12 @@ export function useSetTourStatus() {
   return useAdminMutation(({ id, status }: { id: number; status: TourStatus }) =>
     api.patch(`/admin/tours/${id}/status`, { status }), [tourKeys.all])
 }
+
+// --- Audit log (read-only, Exercise 12) ------------------------------------------
+// Under the 'admin' key like every list here, so each admin action above
+// refreshes it: the event appears as soon as the change is made.
+
+export const useAuditEvents = (params: Params) => useAdminList<AuditEvent>('audit-events', params)
 
 // --- Discounts --------------------------------------------------------------------
 

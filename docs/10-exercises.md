@@ -138,6 +138,17 @@ benchmark scripts in `backend/database/benchmarks/` and the write-up
 suspensions, wallet credits, tour status) in an `audit_events` table, and
 show it on a new admin page.
 
+*Implemented:* table `audit_events` (migration
+`2026_11_26_000500_create_audit_events_table`; CHECKs on the action and
+subject type, triggers that refuse UPDATE, DELETE and TRUNCATE) for 7 admin
+actions: approve / suspend an operator, suspend / unsuspend a user, credit a
+wallet, change a tour's status, create an admin. Events are written by
+`AuditLog::record()` in the same transaction as the change, from the new
+`AdminUserService` and `TourService::moderate()`, only when something really
+changed. Read-only `GET /api/admin/audit-events` and the admin page
+`/admin/audit`. See [D25](decisions.md), chapter [04](04-database.md) and
+the write-up [exercises/12-audit-log.md](exercises/12-audit-log.md).
+
 ## Reading exercises
 
 - Open `vendor/laravel/framework/src/Illuminate/Auth/Passwords/DatabaseTokenRepository.php`

@@ -20,6 +20,7 @@ erDiagram
     tours ||--o{ reviews : receives
     reviews ||--o{ review_photos : "up to 3"
     discounts ||--o{ bookings : "applied to"
+    users ||--o{ audit_events : "acts (admins)"
 ```
 
 The migrations in [`backend/database/migrations`](../backend/database/migrations)
@@ -56,6 +57,7 @@ else: bugs, race conditions, a script someone runs by hand next year.
 | `reviews (tour_id, user_id)` unique | one review per traveler and tour |
 | `review_photos_position_range` (`position BETWEEN 1 AND 3`) + `review_photos (review_id, position)` unique | at most three photos per review, each in its own slot (Exercise 8, D21). Photo rows cascade with their review; the *files* are deleted by `ReviewService` after the commit, since the database cannot touch the disk |
 | `cities (region_id, name)` unique | no duplicate city within a region |
+| `audit_events_action_valid`, `audit_events_subject_type_valid` + triggers `audit_events_append_only` / `audit_events_no_truncate` | only known admin actions and subject types are logged, and an event can never be changed or removed (Exercise 12, D25). The triggers stop bugs, not the table owner, who can drop them |
 | `*_status_valid`, `users_role_valid` | only known statuses and roles |
 | `restrictOnDelete` foreign keys | a city with tours, a user with bookings... cannot be deleted |
 
@@ -65,6 +67,24 @@ bypassed: `DepartureDataModelTest::test_the_database_refuses_overbooking_a_depar
 Laravel has no schema-builder method for `CHECK` constraints, so the
 migrations use `DB::statement('ALTER TABLE ... ADD CONSTRAINT ...')`. That is
 normal; not everything needs an abstraction.
+
+### The audit log: append-only, written by the services (Exercise 12)
+
+`audit_events` records who did what in the admin area: `actor_id` (the
+admin, FK `RESTRICT`), `action` (enum `AuditAction`), a polymorphic subject
+(`user` or `tour`, **no** foreign key, so an operator can still delete a
+booking-free tour and the event keeps its id), and `changes` (`jsonb`, only
+what changed, e.g. `{"status": {"from": "pending", "to": "approved"}}`).
+
+It works like the wallet ledger: rows are only ever inserted. The service
+that makes a change (`AdminUserService`, `TourService::moderate()`) calls
+`AuditLog::record()` inside the same transaction, after locking the row and
+only if something really changed. A refused action leaves no event; a
+rollback removes the change and its event together. Names and e-mails are
+not copied into the event: the API reads them from the current rows. Note
+that `jsonb` does not keep key order (`{"to", "from"}` comes back sorted),
+so tests compare `changes` with `assertEquals`, not `assertSame`. Full
+reasoning: D25.
 
 ### The tour's length: from a generated column to a plain one
 

@@ -45,6 +45,7 @@ const adminNav: DashboardNavItem[] = [
   { to: '/admin/bookings', label: 'Bookings' },
   { to: '/admin/discounts', label: 'Discounts' },
   { to: '/admin/catalog', label: 'Catalog' },
+  { to: '/admin/audit', label: 'Audit log' },
 ]
 
 export const router = createBrowserRouter([
@@ -122,6 +123,7 @@ export const router = createBrowserRouter([
               { path: 'bookings', lazy: async () => ({ Component: (await import('@/features/admin/AdminBookingsPage')).AdminBookingsPage }) },
               { path: 'discounts', lazy: async () => ({ Component: (await import('@/features/admin/AdminDiscountsPage')).AdminDiscountsPage }) },
               { path: 'catalog', lazy: async () => ({ Component: (await import('@/features/admin/AdminCatalogPage')).AdminCatalogPage }) },
+              { path: 'audit', lazy: async () => ({ Component: (await import('@/features/admin/AdminAuditPage')).AdminAuditPage }) },
               { path: '*', element: <NotFoundPage /> },
             ],
           },

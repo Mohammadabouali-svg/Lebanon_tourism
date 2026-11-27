@@ -104,12 +104,12 @@ second origin or CORS config.
 | `app/Http/Controllers/Api/{,Auth,Operator,Admin}/` | Thin HTTP layer, one folder per audience |
 | `app/Http/Resources/` | Output shaping. Models are never returned directly. |
 | `app/Policies/` | Record-level authorization (`TourPolicy`, `DeparturePolicy` (delegates to `TourPolicy`), `BookingPolicy`, `ReviewPolicy`) |
-| `app/Services/` | Business rules: `BookingService`, `PricingService` (+ `Quote`), `WalletService`, `TourService`, `DepartureService` (operator dates), `ReviewService` (review + photo files) |
+| `app/Services/` | Business rules: `BookingService`, `PricingService` (+ `Quote`), `WalletService`, `TourService`, `DepartureService` (operator dates), `ReviewService` (review + photo files), `AdminUserService` (admin account actions, audited), `AuditLog` (writes `audit_events` inside the caller's transaction) |
 | `app/Payments/` | `PaymentGateway` interface, `ChargeResult`, `FakePaymentGateway` (approves in dev, declines in prod) |
 | `app/Queries/` | Reporting queries (`BookingStats`) — aggregate in SQL |
 | `app/Exports/`, `app/Support/CsvExport.php` | CSV with formula-injection protection |
 | `app/Support/` | `ImageUploader` (re-encode to WebP), `Money`, `Search` (LIKE escaping) |
-| `app/Enums/` | `UserRole`, `TourStatus`, `BookingStatus`, `OperatorStatus`, `PaymentMethod`, `DiscountType`, `WalletTransactionType` |
+| `app/Enums/` | `UserRole`, `TourStatus`, `BookingStatus`, `OperatorStatus`, `PaymentMethod`, `DiscountType`, `WalletTransactionType`, `AuditAction` |
 | `app/Exceptions/BusinessRuleException.php` | 422 + stable `code`; named constructors per rule |
 | `app/Notifications/` | Queued e-mails |
 | `app/Providers/AppServiceProvider.php` | Gateway binding, strict models, immutable dates, morph map, password rules, named rate limiters |
@@ -412,7 +412,7 @@ browser redirect → card data never touches our server.
 
 | Need | Read |
 |---|---|
-| Why a choice was made | `docs/decisions.md` (D1–D24) |
+| Why a choice was made | `docs/decisions.md` (D1–D25) |
 | Setup / troubleshooting | `docs/01-getting-started.md` |
 | Request path, folder map | `docs/02-architecture.md` |
 | Sessions, CSRF, roles, policies | `docs/03-authentication.md` |
@@ -445,7 +445,7 @@ Update the status column as work lands.
 | 4 | Change e-mail | `pending_email` (not fillable, CHECK `users_pending_email_differs`, no unique index); `POST`/`DELETE user/email-change` (current password, `throttle:6,1`); signed `POST email/change/{id}/{hash}` (hash of pending address, 60 min, no login); `EmailChangeService::confirm()` locks, re-checks free (`email_taken`), swaps, verifies, deletes old reset tokens, notifies old address after commit (D20); 23 tests in `EmailChangeTest` / `AccessControlTest` | done: verified 2026-11-25 (134 tests, pint, build, lint, manual check traveler2 OK) |
 | 8 | Review photos | `review_photos` (FK cascade, CHECK `review_photos_position_range` 1..3 + unique `(review_id, position)`); `photo_path` copied as position 1 then dropped (`2026_11_25_000300`/`000400`, `down()` restores position 1); `photo_url` → `photos: [{id, url}]`, request `photos[]` (`max:3`, 5 MB each); request limit 20 MB (`app.ini`, nginx dev + prod); `ReviewService` stores files first, deletes them on any failure, deletes files after commit on review delete (D21); 26 tests in `ReviewTest` | done: verified 2026-11-25 (160 tests, pint, build, lint, manual check traveler 3 photos + 4th refused + delete OK) |
 | 7 | CSP header | `docker/nginx/security-headers.conf` included at server level + every location with its own `add_header` (fixes headers missing on `index.html`, bundles, `/storage`); page CSP `default-src 'self'`, `img-src 'self' blob:`, no `unsafe-*`; other responses `default-src 'none'`; enforced, no dev CSP (D22) | done: verified 2026-11-25 (curl -I all locations, browser console clean as guest/traveler/operator/admin on prod stack) |
-| 12 | Audit log | `audit_events` for admin actions + admin page | todo |
+| 12 | Audit log | `audit_events` (migration `2026_11_26_000500`): actor FK restrict, `AuditAction` enum + CHECK, polymorphic subject `user`/`tour` without FK (morph map `tour`), `changes jsonb` (only what changed; ledger id for credits), triggers refuse UPDATE/DELETE/TRUNCATE; 7 actions written by `AuditLog::record()` inside the change's transaction from new `AdminUserService` and `TourService::moderate()`, only when something changed, e-mails after commit; `GET /api/admin/audit-events` + `/admin/audit` page (D25); 27 tests in `AuditLogTest` + `AccessControlTest` row | done: verified 2026-11-27 (239 tests, pint, build, lint, migrate, manual check admin/traveler/operator/guest) |
 | 11 | Faster search | `pg_trgm` GIN `tours_title_trgm` + `tours_city_id_index` (migration `2026_11_26_000400`, `down()` drops the extension without CASCADE); search looks up city ids first, then `title ILIKE ? OR city_id IN (...)` (an `OR EXISTS` blocks both indexes); same semantics, no FTS; benchmark scripts in `backend/database/benchmarks/` (100k tours, throwaway DB `lebanon_tourism_bench`); 3 characterisation tests in `TourCatalogTest`, 3 in `TourSearchIndexTest` (planner checked with `enable_seqscan = off`) (D24) | done: verified 2026-11-26 (see write-up) |
 | 9 | Stripe gateway | Checkout + signed webhook confirms; bind when `PAYMENT_GATEWAY=stripe` | todo |
 | 10 | Recurring departures | `departures (tour_id, starts_on, capacity, booked_spots)`, length stays on the tour (`duration_days` plain, 1..30); expand → migrate → contract (`2026_11_26_000100`/`000200`/`000300`), `down()` refuses unless one departure per tour; `bookings.departure_id` + kept `tour_id` with composite FK; booking/quote at `POST /api/departures/{departure}/...`; locks tour FOR SHARE then departure FOR UPDATE; operator CRUD + weekly series (`weeks` ≤ 26), codes `departure_has_bookings`, `departure_started` (D23) | done: verified 2026-11-25 (204 tests, pint, build, lint, manual check guest/traveler/operator/admin; dev rollback + re-migrate identical) |

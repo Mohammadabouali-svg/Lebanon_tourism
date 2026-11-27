@@ -16,6 +16,7 @@ the tests that prove it, and how it was verified.
 | 8 | Review photos gallery | [08-review-photos.md](08-review-photos.md) |
 | 10 | Recurring departures | [10-recurring-departures.md](10-recurring-departures.md) |
 | 11 | Faster search | [11-faster-search.md](11-faster-search.md) (raw plans in [11-faster-search/](11-faster-search/)) |
+| 12 | Audit log | [12-audit-log.md](12-audit-log.md) |
 
 When an exercise is finished, add its write-up here with the same sections:
 **What was asked**, **Decisions**, **What was done**, **Tests**,

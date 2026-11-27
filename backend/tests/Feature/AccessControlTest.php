@@ -30,6 +30,7 @@ class AccessControlTest extends TestCase
             'export all bookings' => ['GET', '/api/admin/bookings/export'],
             'create a discount' => ['POST', '/api/admin/discounts'],
             'delete a city' => ['DELETE', '/api/admin/cities/1'],
+            'read the audit log' => ['GET', '/api/admin/audit-events'],
         ];
     }
 

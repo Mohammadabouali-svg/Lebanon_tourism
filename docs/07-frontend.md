@@ -44,7 +44,7 @@ frontend/src
 │   ├── bookings/         queries.ts, checkout page, my bookings, bookings table
 │   ├── account/          profile, password, wallet
 │   ├── operator/         dashboard, tours, tour form, bookings
-│   └── admin/            dashboard, users, operators, tours, bookings, discounts, catalog
+│   └── admin/            dashboard, users, operators, tours, bookings, discounts, catalog, audit log
 └── pages/                pages that belong to no feature (home, about, 404, error)
 ```
 
@@ -295,6 +295,13 @@ form, so card data never touches our code or servers.
   shows "next date + N more" in the operator and admin tour tables.
 - **Code splitting.** Operator and admin pages are `lazy` routes in
   `router.tsx`. Their code is a separate download that travelers never fetch.
+- **The audit log page** (`features/admin/AdminAuditPage.tsx`, Exercise 12)
+  is read-only: the API writes events itself, in the same transaction as each
+  admin action. Its hook `useAuditEvents` lives under the `['admin']` key like
+  every admin list, so the existing mutations' `invalidateQueries(['admin'])`
+  already refreshes it, with no extra wiring. The action and admin filters
+  live in the URL; the "Change" column turns `changes` into text
+  ("status: pending → approved", "+$50.00 (ledger entry #12)").
 - **Page titles.** React 19 moves a `<title>` rendered anywhere into
   `<head>`. `PageHeader` and `DocumentTitle` use that.
 - **Dialogs** use the native `<dialog>` element (`components/ui/Dialog.tsx`),

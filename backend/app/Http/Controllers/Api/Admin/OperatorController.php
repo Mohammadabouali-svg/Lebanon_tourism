@@ -6,9 +6,8 @@ use App\Enums\OperatorStatus;
 use App\Enums\UserRole;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\UserResource;
-use App\Models\OperatorProfile;
 use App\Models\User;
-use App\Notifications\OperatorApprovedNotification;
+use App\Services\AdminUserService;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
@@ -21,6 +20,8 @@ use Illuminate\Validation\Rule;
 */
 class OperatorController extends Controller
 {
+    public function __construct(private readonly AdminUserService $admins) {}
+
     public function index(Request $request): AnonymousResourceCollection
     {
         $filters = $request->validate([
@@ -39,37 +40,26 @@ class OperatorController extends Controller
         return UserResource::collection($operators);
     }
 
-    public function approve(User $user): UserResource
+    /** Re-approving after a suspension does not send the welcome e-mail again. Audited (D25). */
+    public function approve(Request $request, User $user): UserResource
     {
-        $profile = $this->profileOf($user);
-        $wasApprovedBefore = $profile->approved_at !== null;
-
-        $profile->status = OperatorStatus::Approved;
-        $profile->approved_at ??= now();
-        $profile->save();
-
-        // Re-approving after a suspension does not send the welcome e-mail again.
-        if (! $wasApprovedBefore) {
-            $user->notify(new OperatorApprovedNotification);
-        }
+        $this->ensureOperator($user);
+        $this->admins->approveOperator($request->user(), $user);
 
         return UserResource::make($user->load(['operatorProfile', 'wallet']));
     }
 
     /** Their published tours disappear from the public site immediately (see Tour::visibleToPublic). */
-    public function suspend(User $user): UserResource
+    public function suspend(Request $request, User $user): UserResource
     {
-        $profile = $this->profileOf($user);
-        $profile->status = OperatorStatus::Suspended;
-        $profile->save();
+        $this->ensureOperator($user);
+        $this->admins->suspendOperator($request->user(), $user);
 
         return UserResource::make($user->load(['operatorProfile', 'wallet']));
     }
 
-    private function profileOf(User $user): OperatorProfile
+    private function ensureOperator(User $user): void
     {
         abort_unless($user->isOperator() && $user->operatorProfile !== null, 404, 'This user is not a tour operator.');
-
-        return $user->operatorProfile;
     }
 }

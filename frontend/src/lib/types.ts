@@ -246,3 +246,32 @@ export interface AdminDashboard {
   years: number[]
   monthly: MonthlyPoint[]
 }
+
+/*
+ * One admin audit event (AuditEventResource, Exercise 12). `changes` holds only
+ * what the action changed: {field: {from, to}} for status changes, or
+ * {amount_cents, wallet_transaction_id} for a wallet credit. `subject.label` is
+ * null when the subject no longer exists (a deleted tour).
+ */
+export type AuditAction =
+  | 'admin.created'
+  | 'operator.approved'
+  | 'operator.suspended'
+  | 'tour.status_changed'
+  | 'user.suspended'
+  | 'user.unsuspended'
+  | 'wallet.credited'
+
+export interface AuditChange {
+  from: string | boolean | null
+  to: string | boolean | null
+}
+
+export interface AuditEvent {
+  id: number
+  action: AuditAction
+  actor: { id: number; name: string; email: string }
+  subject: { type: 'user' | 'tour'; id: number; label: string | null }
+  changes: Record<string, AuditChange | number> | null
+  created_at: string
+}

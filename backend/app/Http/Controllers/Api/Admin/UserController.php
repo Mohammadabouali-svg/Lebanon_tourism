@@ -3,21 +3,17 @@
 namespace App\Http\Controllers\Api\Admin;
 
 use App\Enums\UserRole;
-use App\Exceptions\BusinessRuleException;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Admin\CreditWalletRequest;
 use App\Http\Resources\UserResource;
 use App\Http\Resources\WalletTransactionResource;
 use App\Models\User;
-use App\Services\WalletService;
+use App\Services\AdminUserService;
 use App\Support\Search;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Password;
-use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 
 /*
@@ -29,6 +25,8 @@ use Illuminate\Validation\Rule;
 */
 class UserController extends Controller
 {
+    public function __construct(private readonly AdminUserService $admins) {}
+
     public function index(Request $request): AnonymousResourceCollection
     {
         $filters = $request->validate([
@@ -50,13 +48,7 @@ class UserController extends Controller
         return UserResource::collection($users);
     }
 
-    /*
-    | Creates another administrator.
-    |
-    | The new admin gets a random password nobody knows and an e-mail with a
-    | "choose your password" link (the normal reset flow). The creating admin
-    | therefore never knows, types or sends someone else's password.
-    */
+    /** Creates another administrator, invited by e-mail (see AdminUserService::createAdmin). */
     public function storeAdmin(Request $request): JsonResponse
     {
         $data = $request->validate([
@@ -64,48 +56,34 @@ class UserController extends Controller
             'email' => ['required', 'string', 'email:rfc', 'max:255', 'unique:users,email'],
         ]);
 
-        $admin = new User([
-            'name' => $data['name'],
-            'email' => $data['email'],
-            'password' => Str::password(32),
-        ]);
-        $admin->role = UserRole::Admin;
-        $admin->email_verified_at = now();
-        $admin->save();
-
-        Password::sendResetLink(['email' => $admin->email]);
+        $admin = $this->admins->createAdmin($request->user(), name: $data['name'], email: $data['email']);
 
         return UserResource::make($admin->load('wallet'))->response()->setStatusCode(201);
     }
 
+    /** Also ends their sessions. Audited (D25). */
     public function suspend(Request $request, User $user): UserResource
     {
-        if ($user->is($request->user())) {
-            throw BusinessRuleException::cannotSuspendSelf();
-        }
-
-        $user->forceFill(['suspended_at' => now()])->save();
-        // End their sessions right away (see also EnsureAccountIsActive).
-        DB::table('sessions')->where('user_id', $user->id)->delete();
+        $user = $this->admins->suspend($request->user(), $user);
 
         return UserResource::make($user->load(['wallet', 'operatorProfile']));
     }
 
-    public function unsuspend(User $user): UserResource
+    public function unsuspend(Request $request, User $user): UserResource
     {
-        $user->forceFill(['suspended_at' => null])->save();
+        $user = $this->admins->unsuspend($request->user(), $user);
 
         return UserResource::make($user->load(['wallet', 'operatorProfile']));
     }
 
-    /** Adds credit to a user's wallet. Recorded in the ledger with the admin's id. */
-    public function creditWallet(CreditWalletRequest $request, User $user, WalletService $wallets): JsonResponse
+    /** Adds credit to a user's wallet. Recorded in the ledger with the admin's id, and audited (D25). */
+    public function creditWallet(CreditWalletRequest $request, User $user): JsonResponse
     {
-        $transaction = $wallets->credit(
-            $user->wallet,
-            $request->integer('amount_cents'),
-            $request->validated('description'),
-            createdBy: $request->user(),
+        $transaction = $this->admins->creditWallet(
+            $request->user(),
+            $user,
+            amountCents: $request->integer('amount_cents'),
+            description: $request->validated('description'),
         );
 
         return WalletTransactionResource::make($transaction)

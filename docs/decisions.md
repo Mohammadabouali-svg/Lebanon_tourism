@@ -680,3 +680,80 @@ change what users can search for. `CREATE INDEX CONCURRENTLY`: see above.
   e-mail, bookings by reference and traveler) still use unindexed `ILIKE`;
   `tours.operator_id` and `tours.category_id` have no index; the "Hike" page
   query still sorts every match by its next departure.
+
+## D25. Audit log: explicit events in the services, append-only table
+
+**Context.** Exercise 12 asks to record who changed what in the admin area
+(approvals, suspensions, wallet credits, tour status) in an `audit_events`
+table, and to show it on an admin page. Most of those actions were a plain
+`save()` in the controller, with no transaction. Wallet credits already
+leave a ledger row with `created_by_id`; tour moderation already ran in
+`TourService::moderate()` under a row lock (D19).
+
+**Decision.**
+- **Scope: 7 actions.** The four the exercise lists, their reverses, and
+  creating an admin: `admin.created`, `operator.approved`,
+  `operator.suspended`, `tour.status_changed`, `user.suspended`,
+  `user.unsuspended`, `wallet.credited`. PHP enum `AuditAction` plus
+  CHECK `audit_events_action_valid`.
+- **Written explicitly by the service that makes the change, in the same
+  transaction**, through `AuditLog::record()`. The account actions moved
+  from the controllers into a new `AdminUserService`; `TourService::moderate()`
+  takes the acting admin. Each action locks the row it changes, reads the
+  "before" value under the lock, and records an event **only if something
+  changed**. E-mails (operator approval, admin invitation) go out after commit.
+- **Schema.** `actor_id` (FK `RESTRICT`, users are never deleted),
+  `action`, a polymorphic subject (`subject_type` in `('user', 'tour')`,
+  CHECK `audit_events_subject_type_valid`, morph map entry `tour`, **no FK**),
+  `changes jsonb` with only what changed (`{"status": {"from", "to"}}`,
+  `{"locked": ...}`, or `{"amount_cents", "wallet_transaction_id"}`),
+  `created_at` only. Indexes `(actor_id, id)`, `(action, id)`,
+  `(subject_type, subject_id, id)` for the page's filters, sorted by `id`.
+- **Append-only in the database too.** Triggers refuse `UPDATE`, `DELETE`
+  (row level) and `TRUNCATE` (statement level).
+- **No copied personal data.** The event stores ids, statuses and amounts.
+  Names, e-mails and tour titles are joined from the current rows by
+  `AuditEventResource`; a deleted tour shows `label: null`.
+- **Read-only API:** `GET /api/admin/audit-events` in the admin group,
+  filters `action`, `actor_id`, `subject_type` + `subject_id`, 25 per page,
+  newest first. Admin page `/admin/audit`.
+
+**Why.** Explicit calls keep the rule visible where the action happens
+(invariants 4–5 style): a refused action (`cannot_suspend_self`, 404, 422)
+never reaches `record()`, a crash rolls back the change and its event
+together, and every case is a plain feature test. Recording only real
+changes under the lock means two admins clicking at once leave one event,
+and a "from" value is always one that was really there. Pointing at the
+ledger row instead of copying it keeps the ledger the single source of truth
+for money. Without a subject FK, an operator can still delete a booking-free
+tour (as today) and the event keeps the id; a FK would either block that
+(`RESTRICT`) or lose which tour it was (`SET NULL`). Not copying names means
+personal data lives in one place: correcting or anonymising a user also
+corrects the log.
+
+**Consequences.** The triggers stop bugs and careless sessions, **not** the
+database owner: the app connects as the owner (a superuser in dev), which
+can drop a trigger. Real tamper resistance needs a separate, less
+privileged role for the app, or shipping events off the server. A repeated
+suspend now keeps the original `suspended_at` instead of overwriting it.
+`moderate()` now syncs the route-bound tour with the row it locked, so a
+stale model cannot skip the write. The admin page shows *current* names, so
+it cannot answer "what was this user called when it happened".
+
+**Rejected.**
+- *Eloquent observers:* they would have to guess the actor from `auth()`,
+  fire for seeders, tests and operator edits too, and cannot see work that is
+  not one model save (sessions deleted on suspend, the ledger row).
+- *Database triggers that write the events:* the database does not know
+  which admin acted unless every request runs `SET LOCAL app.user_id`; they
+  would log operator edits too and hide the rule from readers of the PHP.
+- *`REVOKE UPDATE, DELETE`:* useless while the app is the table owner.
+- *Typed nullable FKs per subject* (`subject_user_id`, `subject_tour_id`):
+  see the FK trade-off above; also one column per future subject type.
+- *Before/after snapshots of whole rows:* would copy personal data (and,
+  for users, the password hash) into a table that is never cleaned.
+- *A `reason` column:* needs a reason input on every admin action; a
+  possible follow-up.
+- *Also logging discounts, catalogue CRUD and the bookings CSV export:*
+  left as follow-ups (the export, a read of every traveler's data, is the
+  strongest candidate).

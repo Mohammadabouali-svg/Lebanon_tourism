@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Enums\AuditAction;
 use App\Enums\TourStatus;
 use App\Exceptions\BusinessRuleException;
 use App\Models\Tour;
@@ -27,7 +28,10 @@ use Throwable;
 */
 final class TourService
 {
-    public function __construct(private readonly ImageUploader $images) {}
+    public function __construct(
+        private readonly ImageUploader $images,
+        private readonly AuditLog $audit,
+    ) {}
 
     /** @param  array<string, mixed>  $data  validated TourRequest data */
     public function create(User $operator, array $data, ?UploadedFile $image): Tour
@@ -52,20 +56,42 @@ final class TourService
      * reinstates the tour and removes the lock. This lives here, next to the
      * operator's side of the rule, rather than in a policy or Form Request:
      * see docs/decisions.md D19.
+     *
+     * Audited (Exercise 12, D25): the event lists what really changed, the
+     * status and/or the lock, compared with the row read under the lock.
+     * Picking the status the tour already has, with the same lock, changes
+     * nothing and records nothing.
      */
-    public function moderate(Tour $tour, TourStatus $status): Tour
+    public function moderate(Tour $tour, TourStatus $status, User $admin): Tour
     {
-        DB::transaction(function () use ($tour, $status) {
+        DB::transaction(function () use ($tour, $status, $admin) {
             // Same row lock as save(): an operator save and an admin decision
             // on the same tour run one after the other, never interleaved.
-            $current = Tour::query()->whereKey($tour->getKey())->lockForUpdate()->firstOrFail(['moderated_at']);
+            $current = Tour::query()->whereKey($tour->getKey())->lockForUpdate()->firstOrFail(['status', 'moderated_at']);
+
+            // The route-bound $tour was read before the lock. Take the locked
+            // values as its "original", so the event's "from" is what was
+            // really there and save() writes whatever differs from it.
+            $tour->forceFill(['status' => $current->status, 'moderated_at' => $current->moderated_at])
+                ->syncOriginalAttributes(['status', 'moderated_at']);
+
+            $wasLocked = $current->moderated_at !== null;
+            $locked = $status === TourStatus::Archived;
 
             // forceFill: moderated_at is deliberately not fillable (invariant 9).
             $tour->forceFill([
                 'status' => $status,
                 // Re-archiving a locked tour keeps the original lock time.
-                'moderated_at' => $status === TourStatus::Archived ? ($current->moderated_at ?? now()) : null,
+                'moderated_at' => $locked ? ($current->moderated_at ?? now()) : null,
             ])->save();
+
+            $changes = array_filter([
+                'status' => $current->status !== $status ? AuditLog::change($current->status, $status) : null,
+                'locked' => $wasLocked !== $locked ? AuditLog::change($wasLocked, $locked) : null,
+            ]);
+            if ($changes !== []) {
+                $this->audit->record($admin, AuditAction::TourStatusChanged, $tour, $changes);
+            }
         });
 
         return $tour;

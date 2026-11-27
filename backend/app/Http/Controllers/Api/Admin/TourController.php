@@ -47,7 +47,7 @@ class TourController extends Controller
 
         $data = $request->validate(['status' => ['required', Rule::enum(TourStatus::class)]]);
 
-        $tour = $this->tours->moderate($tour, TourStatus::from($data['status']));
+        $tour = $this->tours->moderate($tour, TourStatus::from($data['status']), admin: $request->user());
 
         return TourResource::make($tour->load(['city.region', 'category', 'operator.operatorProfile'])->loadCount('bookings'));
     }

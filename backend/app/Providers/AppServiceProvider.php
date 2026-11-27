@@ -3,6 +3,7 @@
 namespace App\Providers;
 
 use App\Models\Booking;
+use App\Models\Tour;
 use App\Models\User;
 use App\Payments\FakePaymentGateway;
 use App\Payments\PaymentGateway;
@@ -62,6 +63,8 @@ class AppServiceProvider extends ServiceProvider
         // class name. Renaming or moving a class can't corrupt old rows.
         Relation::enforceMorphMap([
             'booking' => Booking::class,
+            // audit_events.subject_type (D25). Mirrored by its CHECK constraint.
+            'tour' => Tour::class,
             'user' => User::class,
         ]);
     }

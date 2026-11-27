@@ -141,6 +141,9 @@ Route::middleware(['auth:sanctum', 'active'])->group(function () {
 
             Route::apiResource('discounts', Admin\DiscountController::class)->except('show');
 
+            // Read-only: events are written by the services, never through the API (D25).
+            Route::get('audit-events', [Admin\AuditEventController::class, 'index']);
+
             Route::get('regions', [Admin\CatalogController::class, 'regions']);
             Route::post('regions', [Admin\CatalogController::class, 'storeRegion']);
             Route::put('regions/{region}', [Admin\CatalogController::class, 'updateRegion']);
