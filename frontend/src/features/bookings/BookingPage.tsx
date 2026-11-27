@@ -69,8 +69,17 @@ function Checkout({ tour, departure }: { tour: Tour; departure: Departure | null
     book.mutate(
       { spots, payment_method: method, discount_code: appliedCode },
       {
-        onSuccess: (booking) =>
-          navigate('/bookings', { state: { flash: `Booking ${booking.reference} is confirmed. Have a great trip!` } }),
+        onSuccess: (booking) => {
+          // Stripe Checkout (Exercise 9): the card is paid on Stripe's own
+          // page. This is a navigation, not a script or frame, so our CSP
+          // needs no change (D22). The booking is confirmed by Stripe's
+          // webhook, not by the traveler coming back.
+          if (booking.checkout_url) {
+            window.location.assign(booking.checkout_url)
+            return
+          }
+          navigate('/bookings', { state: { flash: `Booking ${booking.reference} is confirmed. Have a great trip!` } })
+        },
       },
     )
   }
@@ -173,10 +182,11 @@ function Checkout({ tour, departure }: { tour: Tour; departure: Departure | null
               </div>
             </fieldset>
             {method === 'card' && (
-              // In production the provider's own form (e.g. Stripe Elements)
-              // collects the card number, so it never touches our servers.
+              // The provider's own page (Stripe Checkout) collects the card
+              // number, so it never touches our servers. With the fake
+              // development gateway the payment is approved at once.
               <Alert tone="info" className="mt-4">
-                Development mode: the fake payment gateway approves the payment. No card number is collected by this site.
+                Card payments are handled by our payment provider. This site never sees your card number.
               </Alert>
             )}
             {walletTooLow && (

@@ -55,6 +55,12 @@ class BusinessRuleException extends RuntimeException implements ShouldntReport
     }
 
     /** The card was charged after the booking had already expired (see BookingService::markPaid). */
+    /** The payment provider could not be reached; nothing was charged and the spots were released (Exercise 9). */
+    public static function paymentUnavailable(): self
+    {
+        return new self('Card payments are unavailable right now. Nothing was charged; please try again in a few minutes.', 'payment_unavailable');
+    }
+
     public static function bookingExpired(): self
     {
         return new self(

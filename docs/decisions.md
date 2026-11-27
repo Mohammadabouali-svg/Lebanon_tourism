@@ -134,7 +134,9 @@ spending the same money. See [05-bookings-and-payments.md](05-bookings-and-payme
 **Why.** Real card handling (Stripe, ...) needs an account and keys, and card
 numbers must never touch our server. The interface shows where a real
 provider plugs in. The fake gateway declines everything in production, so a
-misconfiguration cannot give tours away.
+misconfiguration cannot give tours away. Exercise 9 added the Stripe driver
+and changed the interface from `charge()` to `startPayment()`, because a
+hosted payment page answers later, through a webhook (D26).
 
 ## D13. Uploaded images are re-encoded
 
@@ -176,7 +178,7 @@ To keep the project teachable, some things are listed as exercises instead of
 being built: e-mail address change with re-verification (since built in
 Exercise 4, see D20), cleanup of stale
 `pending` card bookings (since built in Exercise 5, see D18), a real Stripe
-driver, recurring departures (since built in Exercise 10, see D23), full-text
+driver (since built in Exercise 9, see D26), recurring departures (since built in Exercise 10, see D23), full-text
 search (Exercise 11 made the search fast with trigram indexes instead, see
 D24), admin "lock" on moderated tours (since built in Exercise 6, see D19).
 See [10-exercises.md](10-exercises.md).
@@ -247,7 +249,10 @@ project's size, since few rows are ever pending.
 
 **Consequences.** A traveler whose card was charged just before a crash ends
 up with a `failed` booking until someone reconciles it by hand; a real
-provider's webhook (Exercise 9) should settle that case. Travelers are not
+provider's webhook (Exercise 9) should settle that case. (Since Exercise 9,
+D26: with Stripe the payment is reported by the webhook even if our request
+died, a late payment is credited once, and the timeout is 35 minutes because
+a Checkout Session stays payable for 31.) Travelers are not
 notified of an expiry. The scheduler only runs in the production compose file,
 so in development the command must be run by hand. If the bookings table grows
 large, a partial index `ON bookings (created_at) WHERE status = 'pending'`
@@ -757,3 +762,98 @@ it cannot answer "what was this user called when it happened".
 - *Also logging discounts, catalogue CRUD and the bookings CSV export:*
   left as follow-ups (the export, a read of every traveler's data, is the
   strongest candidate).
+
+## D26. Stripe Checkout, confirmed only by the signed webhook
+
+**Context.** Exercise 9 asks for a `StripePaymentGateway` against Stripe's
+test mode, with Stripe Checkout (Stripe hosts the card form), bookings
+confirmed by Stripe's webhook rather than the browser redirect, a verified
+webhook signature, and a binding for `PAYMENT_GATEWAY=stripe`. The existing
+`PaymentGateway::charge()` was synchronous (approved/declined at once);
+`markPaid()` treated "booking no longer pending" as "late charge, credit the
+wallet" (D18); the pending timeout was 15 minutes; the confirmation e-mail
+was sent by the booking controller.
+
+**Decision.**
+- **Interface:** `startPayment(Booking): PaymentStart` replaces `charge()`.
+  The answer is *paid* or *declined* (fake gateway), *redirect* with a
+  session id and URL (Stripe), or *unavailable* (Stripe unreachable or
+  refusing: spots released, new code `payment_unavailable`).
+- **No SDK.** `StripePaymentGateway` makes one form-encoded call with
+  Laravel's `Http` client (10 s timeout, `Idempotency-Key` = booking
+  reference). One line item with the server's `total_cents`;
+  `allowed_payment_method_types=[card]` (current API versions refuse the
+  older `payment_method_types`); no traveler e-mail or name sent. `StripeWebhookSignature` checks the signature by
+  hand: HMAC-SHA256 over `"<t>.<raw body>"`, `hash_equals`, 5-minute
+  tolerance, any of several `v1`, empty secret refuses all.
+- **Webhook route** `POST /api/webhooks/stripe` in its own block of
+  `routes/api.php`, outside the auth groups (Stripe has no session), with a
+  `webhooks` rate limit (120/min per IP). The signature is checked before
+  the body is decoded; bad signature 400, everything accepted 200.
+  Four events are used: `checkout.session.completed` and
+  `async_payment_succeeded` confirm (only with `payment_status=paid`),
+  `checkout.session.expired` and `async_payment_failed` release. The async
+  pair exists because Stripe's Link wallet still offered a bank debit on a
+  card-only session in the manual check; without it, such a payment would
+  complete `unpaid`, the booking would expire, and the later success would
+  never reach us.
+- **Service:** `BookingService::confirmCheckout()` and `expireCheckout()` are
+  public for the webhook; both look the booking up by its unique
+  `payment_session_id` and lock it. Confirmation goes through one private
+  `settlePayment()` shared with the fake path: a booking whose
+  `payment_reference` is already set is left alone (repeat event); a
+  booking no longer pending is refunded to the wallet once and gets the
+  reference; otherwise it is confirmed. An amount or currency that differs
+  from the booking never confirms it. The e-mail is sent by the webhook
+  controller only when this event confirmed the booking.
+- **Schema** (`2026_11_27_000100`): `payment_session_id` (unique) and
+  `checkout_url` on bookings, not fillable; `payment_reference` becomes
+  unique; CHECK `bookings_checkout_only_for_cards`.
+- **Timeouts:** Checkout Sessions expire after 31 minutes (Stripe's minimum
+  is 30, plus a margin for clock skew); `pending_timeout_minutes` is 35 with
+  Stripe and stays 15 with the fake gateway. Stripe's
+  `checkout.session.expired` releases the spots first; the command remains
+  the safety net.
+- **Abandoned payments** wait for that expiry. *My bookings* shows a
+  "Continue to payment" link (the stored URL, only to the booking's owner,
+  only while pending) and refetches every 3 s while a booking is pending.
+- **Local development:** a `stripe` compose service (official Stripe CLI,
+  profile `stripe`, not started by default) runs `stripe listen` and
+  forwards those four event types to nginx. `DemoSeeder` always books with the
+  fake gateway.
+
+**Why.** Two API calls and a 20-line signature check do not justify a
+dependency, and `Http::fake()` makes every Stripe answer (success, outage)
+a plain feature test; the signature code is small enough to read and is
+unit-tested with the attacks (tampered body, wrong secret, replay, empty
+secret). The webhook is the only thing that cannot be forged, which is why
+the success URL confirms nothing. Making repeats harmless was required, not
+optional: the old `markPaid()` rule would have refunded a confirmed booking
+when Stripe delivered `completed` twice (the repeat test failed with
+`18000 is identical to 0` with the check removed). State on the booking
+row, under its lock, plus a unique index, is enough; no extra table.
+Keeping 15 minutes for the fake gateway kept every existing test's meaning.
+
+**Consequences.** A Stripe-paid booking is `pending` for a few seconds after
+payment; the frontend polls. If the webhook is down for longer than 35
+minutes, the booking expires and the later webhook credits the wallet
+instead of confirming. Spots of an abandoned checkout are held up to 31
+minutes. The webhook trusts the configured secret: rotating it means
+updating `STRIPE_WEBHOOK_SECRET`. Refunds still go to the wallet (product
+decision, chapter 05); a card refund through Stripe's API is not built.
+`stripe listen` is for development; production registers the endpoint in
+the Stripe dashboard (chapter 09). The CSP needs no change: Checkout is a
+top-level navigation (D22).
+
+**Rejected.**
+- *The `stripe/stripe-php` SDK:* less code to own, but a dependency for two
+  calls, and its static client is clumsier to fake in tests.
+- *Confirming on the success redirect:* anyone can open that URL.
+- *Stripe Elements / embedded Checkout:* scripts and frames from Stripe on
+  our page (CSP changes, D22) for no gain in an exercise.
+- *A `processed_webhook_events` table:* a second place that says "done";
+  the booking's own state is checked under its lock anyway.
+- *Keeping 15 minutes and expiring the session through Stripe's API from
+  the command:* an external call per expiry and a new failure mode.
+- *A "cancel payment" button:* a new endpoint that must expire the session
+  before releasing spots; left as a follow-up.

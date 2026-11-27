@@ -11,6 +11,7 @@ use App\Http\Controllers\Api\Operator;
 use App\Http\Controllers\Api\ProfileController;
 use App\Http\Controllers\Api\ReferenceDataController;
 use App\Http\Controllers\Api\ReviewController;
+use App\Http\Controllers\Api\StripeWebhookController;
 use App\Http\Controllers\Api\TourController;
 use Illuminate\Support\Facades\Route;
 
@@ -62,6 +63,14 @@ Route::post('email/change/{id}/{hash}', [EmailChangeController::class, 'confirm'
     ->middleware(['signed:relative', 'throttle:auth'])
     ->whereNumber('id')
     ->name('email-change.confirm');
+
+// --- Payment provider webhooks (Exercise 9, D26) -----------------------------
+//
+// Called by Stripe's servers, not by a browser: no session, no CSRF token,
+// so it cannot sit in an auth group. The controller refuses (400) anything
+// without a valid Stripe signature before reading the body; that signature
+// is this route's only protection.
+Route::post('webhooks/stripe', StripeWebhookController::class)->middleware('throttle:webhooks');
 
 // --- Any logged-in user ------------------------------------------------------
 

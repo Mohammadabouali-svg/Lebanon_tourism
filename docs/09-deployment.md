@@ -117,7 +117,14 @@ remove old columns last.
 - [ ] `SANCTUM_STATEFUL_DOMAINS` and `FRONTEND_URL` set to the real domain
 - [ ] Real SMTP provider configured, with SPF/DKIM on the sending domain
 - [ ] Queue worker and scheduler running
-- [ ] A real payment gateway driver (the fake one declines everything in production)
+- [ ] Card payments: the fake gateway declines everything in production. With
+  Stripe (Exercise 9, D26): `PAYMENT_GATEWAY=stripe`, the **live** secret key
+  in a secret store, a webhook endpoint `https://<domain>/api/webhooks/stripe`
+  registered in the Stripe dashboard for `checkout.session.completed`,
+  `checkout.session.expired`, `checkout.session.async_payment_succeeded` and
+  `checkout.session.async_payment_failed`, and its signing secret in `STRIPE_WEBHOOK_SECRET`
+  (the Stripe CLI is for development only). The Checkout page is a
+  navigation, so the CSP needs no change.
 - [ ] Backups scheduled and a restore tested
 - [ ] First admin created with `php artisan app:create-admin`; no demo accounts
 - [ ] Monitoring on `GET /up` and alerts on errors in the logs

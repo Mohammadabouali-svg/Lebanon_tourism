@@ -2,6 +2,7 @@
 
 namespace App\Http\Resources;
 
+use App\Enums\BookingStatus;
 use App\Models\Booking;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
@@ -23,6 +24,12 @@ class BookingResource extends JsonResource
             'discount_code' => $this->whenLoaded('discount', fn () => $this->discount?->code),
             'payment_method' => $this->payment_method,
             'status' => $this->status,
+            // Stripe's payment page (Exercise 9): only while there is still
+            // something to pay, and only to the traveler who booked.
+            // Operators and admins have no business on it.
+            'checkout_url' => $this->status === BookingStatus::Pending && $request->user()?->id === $this->user_id
+                ? $this->checkout_url
+                : null,
             'can_cancel' => $this->whenLoaded('departure', fn () => $this->isCancellable()),
             'paid_at' => $this->paid_at?->toIso8601String(),
             'cancelled_at' => $this->cancelled_at?->toIso8601String(),

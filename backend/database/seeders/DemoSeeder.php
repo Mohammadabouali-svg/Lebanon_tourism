@@ -11,6 +11,7 @@ use App\Models\Discount;
 use App\Models\Review;
 use App\Models\Tour;
 use App\Models\User;
+use App\Payments\FakePaymentGateway;
 use App\Services\BookingService;
 use App\Services\WalletService;
 use Carbon\CarbonImmutable;
@@ -24,13 +25,21 @@ use Illuminate\Database\Seeder;
 | (WalletService, BookingService) rather than inserted directly. The demo
 | data therefore obeys the same rules as real data: ledger entries exist,
 | spot counters match the bookings, discounts are counted.
+|
+| The demo card bookings always use the fake gateway, whatever
+| PAYMENT_GATEWAY says: with Stripe (Exercise 9) seeding would otherwise
+| call Stripe and leave the demo bookings `pending`, waiting for webhooks
+| that never come.
 */
 class DemoSeeder extends Seeder
 {
+    private readonly BookingService $bookings;
+
     public function __construct(
         private readonly WalletService $wallets,
-        private readonly BookingService $bookings,
-    ) {}
+    ) {
+        $this->bookings = app()->make(BookingService::class, ['gateway' => new FakePaymentGateway]);
+    }
 
     public function run(): void
     {

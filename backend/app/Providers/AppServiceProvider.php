@@ -7,6 +7,7 @@ use App\Models\Tour;
 use App\Models\User;
 use App\Payments\FakePaymentGateway;
 use App\Payments\PaymentGateway;
+use App\Payments\StripePaymentGateway;
 use Carbon\CarbonImmutable;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Database\Eloquent\Model;
@@ -32,6 +33,15 @@ class AppServiceProvider extends ServiceProvider
         // Laravel's container injects whatever is bound here.
         $this->app->bind(PaymentGateway::class, fn () => match (config('payments.gateway')) {
             'fake' => new FakePaymentGateway,
+            'stripe' => new StripePaymentGateway(
+                // Fail loudly on a missing key instead of sending every
+                // traveler to an error from Stripe.
+                secret: config('payments.stripe.secret') ?: throw new InvalidArgumentException('PAYMENT_GATEWAY=stripe needs STRIPE_SECRET.'),
+                currency: config('payments.currency'),
+                frontendUrl: rtrim(config('app.frontend_url'), '/'),
+                expiresMinutes: config('payments.stripe.checkout_expires_minutes'),
+                timeoutSeconds: config('payments.stripe.timeout_seconds'),
+            ),
             default => throw new InvalidArgumentException('Unknown payment gateway ['.config('payments.gateway').'].'),
         });
     }
@@ -92,5 +102,11 @@ class AppServiceProvider extends ServiceProvider
         RateLimiter::for('bookings', fn (Request $request) => Limit::perMinute(10)->by($request->user()?->id ?: $request->ip()));
 
         RateLimiter::for('uploads', fn (Request $request) => Limit::perMinute(10)->by($request->user()?->id ?: $request->ip()));
+
+        // Payment provider webhooks (Exercise 9). Generous, because a burst
+        // of real events must not be refused (Stripe would retry them for
+        // days), yet a flood of forged requests cannot make us compute
+        // signatures without limit.
+        RateLimiter::for('webhooks', fn (Request $request) => Limit::perMinute(120)->by($request->ip()));
     }
 }

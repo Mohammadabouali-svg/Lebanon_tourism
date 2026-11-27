@@ -22,6 +22,8 @@ class Booking extends Model
         'discount_id' => null,
         'discount_cents' => 0,
         'payment_reference' => null,
+        'payment_session_id' => null,
+        'checkout_url' => null,
         'paid_at' => null,
         'cancelled_at' => null,
     ];

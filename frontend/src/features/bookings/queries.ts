@@ -15,6 +15,10 @@ export function useMyBookings(page: number) {
     queryKey: bookingKeys.mine(page),
     queryFn: async () => (await api.get<Paginated<Booking>>('/bookings', { params: { page } })).data,
     placeholderData: keepPreviousData,
+    // A card booking paid on Stripe stays `pending` until Stripe's webhook
+    // reaches the server, usually within seconds (Exercise 9). While one is
+    // pending, ask again every few seconds so the page updates by itself.
+    refetchInterval: (query) => (query.state.data?.data.some((booking) => booking.status === 'pending') ? 3000 : false),
   })
 }
 
