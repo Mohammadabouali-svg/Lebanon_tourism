@@ -1,8 +1,9 @@
 import { useState } from 'react'
-import { Link } from 'react-router'
+import { Link, useSearchParams } from 'react-router'
 import { Alert } from '@/components/ui/Alert'
 import { StatusBadge } from '@/components/ui/Badge'
 import { Button, ButtonLink } from '@/components/ui/Button'
+import { buttonClasses } from '@/components/ui/buttonStyles'
 import { Card } from '@/components/ui/Card'
 import { ConfirmDialog } from '@/components/ui/Dialog'
 import { EmptyState } from '@/components/ui/EmptyState'
@@ -21,11 +22,23 @@ export function MyBookingsPage() {
   const [page, setPage] = useState(1)
   const bookings = useMyBookings(page)
   const flash = useFlash()
+  // Stripe sends the traveler back here with ?paid=<reference> (Exercise 9).
+  // Coming back proves nothing (anyone can open this URL): the notice only
+  // reflects the status the server reports, which Stripe's webhook sets.
+  const [searchParams] = useSearchParams()
+  const paidReference = searchParams.get('paid')
+  const returned = paidReference ? bookings.data?.data.find((booking) => booking.reference === paidReference) : undefined
 
   return (
     <div className="mx-auto max-w-4xl px-4 py-10">
       <PageHeader title="My bookings" actions={<ButtonLink to="/tours" variant="secondary">Find more tours</ButtonLink>} />
       {flash && <Alert tone="success" className="mb-6">{flash}</Alert>}
+      {returned?.status === 'pending' && (
+        <Alert tone="info" className="mb-6">Thank you! We are waiting for the payment provider to confirm booking {returned.reference}. This page updates by itself.</Alert>
+      )}
+      {returned?.status === 'confirmed' && (
+        <Alert tone="success" className="mb-6">Payment received: booking {returned.reference} is confirmed. Have a great trip!</Alert>
+      )}
 
       {bookings.isPending ? (
         <PageSpinner />
@@ -87,6 +100,16 @@ function BookingCard({ booking }: { booking: Booking }) {
             Booked {formatDateTime(booking.created_at)}
             {booking.cancelled_at && ` · cancelled ${formatDateTime(booking.cancelled_at)}`}
           </p>
+
+          {booking.checkout_url && (
+            <div className="mt-3 flex flex-wrap items-center gap-3">
+              {/* A plain link: it leaves our site for Stripe's payment page. */}
+              <a href={booking.checkout_url} className={buttonClasses('primary', 'sm')}>
+                Continue to payment
+              </a>
+              <span className="text-xs text-stone-500">Awaiting payment. Unpaid bookings are released after about 30 minutes.</span>
+            </div>
+          )}
 
           {booking.can_cancel && (
             <div className="mt-3">

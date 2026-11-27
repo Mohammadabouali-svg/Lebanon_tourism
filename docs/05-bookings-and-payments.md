@@ -130,22 +130,91 @@ sequenceDiagram
     participant DB as Postgres
     participant G as PaymentGateway
     S->>DB: transaction 1: lock tour (share) and departure, check, hold spots, booking = pending
-    S->>G: charge(total)  (no transaction open)
-    alt approved
+    S->>G: startPayment(booking)  (no transaction open)
+    alt paid (fake gateway)
         S->>DB: transaction 2: lock booking; still pending → confirmed, store payment reference
         Note over S,DB: already expired → stays failed, amount credited to wallet (booking_expired)
-    else declined
-        S->>DB: transaction 2: give spots back, booking = failed
+    else redirect (Stripe)
+        S->>DB: transaction 2: store the Checkout Session id and URL; booking stays pending
+        Note over S,DB: Stripe's webhook settles it later (next section)
+    else declined / unavailable
+        S->>DB: transaction 2: give spots back, booking = failed (payment_declined / payment_unavailable)
     end
 ```
 
-`PaymentGateway` is an interface. The only implementation is
-[`FakePaymentGateway`](../backend/app/Payments/FakePaymentGateway.php), which
-approves everything in development and declines everything in production.
-**The frontend never asks for a card number.** With a real provider, the card
-is typed into the provider's own form (Stripe Checkout, Stripe Elements, ...)
-and our server only sees a payment id. That keeps card data off our servers,
-which is both safer and required by the card industry's rules (PCI DSS).
+`PaymentGateway` is an interface with one method, `startPayment(Booking)`,
+which answers with a [`PaymentStart`](../backend/app/Payments/PaymentStart.php):
+*paid*, *declined*, *redirect* (go to this URL) or *unavailable*. The
+implementation is chosen by `PAYMENT_GATEWAY`:
+
+- `fake`: [`FakePaymentGateway`](../backend/app/Payments/FakePaymentGateway.php)
+  answers *paid* at once in development and *declined* in production.
+- `stripe`: [`StripePaymentGateway`](../backend/app/Payments/StripePaymentGateway.php),
+  Stripe Checkout in test mode (Exercise 9, below).
+
+**The frontend never asks for a card number.** The card is typed into the
+provider's own page (Stripe Checkout) and our server only sees a payment id.
+That keeps card data off our servers, which is both safer and required by the
+card industry's rules (PCI DSS).
+
+### Stripe Checkout and its webhook (Exercise 9)
+
+With Stripe, `startPayment()` charges nothing. It creates a *Checkout
+Session*: a payment page hosted by Stripe, for exactly the booking's
+`total_cents` (the server's quote, discount included). The booking stores
+the session id (`payment_session_id`, unique) and its URL (`checkout_url`),
+and the API answers 201 with `status: "pending"` and `checkout_url`. The
+browser navigates there; the traveler pays; Stripe sends them back to
+`/bookings?paid=<reference>`.
+
+**Coming back to that URL confirms nothing**: anyone can open a URL. Only
+Stripe's webhook can, because only Stripe knows the signing secret:
+
+```mermaid
+sequenceDiagram
+    participant B as Browser
+    participant St as Stripe
+    participant W as POST /api/webhooks/stripe
+    participant S as BookingService
+    B->>St: pays on the Checkout page
+    St->>W: checkout.session.completed (signed)
+    W->>W: verify Stripe-Signature over the raw body (else 400)
+    W->>S: confirmCheckout(session, payment intent, amount, currency)
+    S->>S: lock booking: amount matches? already recorded? still pending?
+    S-->>W: confirmed booking (or null)
+    W-->>St: 200
+    Note over W: confirmation e-mail queued, only if this event confirmed it
+    St-->>B: redirect to /bookings?paid=LT-…  (the page polls until confirmed)
+```
+
+- **Signature** ([`StripeWebhookSignature`](../backend/app/Payments/StripeWebhookSignature.php)):
+  HMAC-SHA256 of `"<timestamp>.<raw body>"` with `STRIPE_WEBHOOK_SECRET`,
+  compared with `hash_equals`; older than 5 minutes is refused (replay); an
+  empty secret refuses everything.
+- **Stripe delivers "at least once"**, so the same event can arrive twice.
+  Once a payment is recorded (`payment_reference` set, unique), a repeat
+  changes nothing: no second e-mail and, above all, no second refund.
+- **Amount check**: an event whose amount or currency differs from the
+  booking is logged as an error and does not confirm it.
+- **`checkout.session.expired`** (the traveler never paid): the spots and
+  the discount use are released, the booking becomes `failed`.
+- **Delayed payment methods.** The session asks for cards only
+  (`allowed_payment_method_types`), yet Stripe's Link wallet can still offer
+  a bank debit. Such a payment completes the session `unpaid` and reports
+  the outcome later: `checkout.session.async_payment_succeeded` confirms the
+  booking like `completed`, `async_payment_failed` releases it like
+  `expired`. So no payment can be taken without the booking hearing of it.
+- Unknown sessions and event types get 200 and are ignored, otherwise Stripe
+  would retry them for days.
+
+A Checkout Session stays payable for 31 minutes (Stripe's minimum is 30), so
+with Stripe the pending timeout of the safety net below is **35 minutes**
+instead of 15. If a payment still arrives after the booking expired, the
+late-payment rule below applies: the money goes to the wallet, once.
+
+Running it locally (test mode, free) is described in
+[01-getting-started.md](01-getting-started.md#card-payments-with-stripe-test-mode).
+See [D26](decisions.md#d26-stripe-checkout-confirmed-only-by-the-signed-webhook).
 
 ### Stale pending bookings (Exercise 5)
 
@@ -154,7 +223,8 @@ or releases the booking: it would stay `pending` and hold its spots (and its
 discount use) forever. The scheduler runs `bookings:expire-pending` every
 minute ([`routes/console.php`](../backend/routes/console.php)). It calls
 `BookingService::expireStalePending()`, which finds card bookings still
-`pending` after `config('payments.pending_timeout_minutes')` (15) and, **one
+`pending` after `config('payments.pending_timeout_minutes')` (15; 35 with
+Stripe) and, **one
 short transaction per booking**, locks the booking, re-checks that it is still
 pending and still too old, then releases the spots and the discount use and
 marks it `failed`. Because of the re-check, running it twice (or twice at
@@ -174,8 +244,10 @@ card was charged), and the request fails with the code `booking_expired`.
 What it does **not** do: refund a booking expired after a crash. We cannot
 ask the fake gateway whether that card was charged, and crediting a card that
 was never charged would hand out money. Each expiry is logged (warning, with
-the booking reference) for manual reconciliation. With a real provider, its
-webhook (Exercise 9) is what settles that case. See
+the booking reference) for manual reconciliation. With Stripe this case
+mostly disappears: the booking does not wait on our server but on Stripe,
+whose webhook reports the payment (or the expiry) even if our request died,
+and a payment reported after expiry is credited to the wallet once. See
 [D18](decisions.md#d18-stale-pending-card-bookings-expire-after-15-minutes).
 
 ## Cancelling
@@ -194,7 +266,7 @@ else.
 
 | Status | Meaning | Holds spots? |
 |---|---|---|
-| `pending` | card payment in progress | yes |
+| `pending` | card payment in progress (with Stripe: until the webhook) | yes |
 | `confirmed` | paid | yes |
 | `cancelled` | cancelled by the traveler, refunded | no |
-| `failed` | card declined | no |
+| `failed` | card declined, provider unavailable, Checkout expired, or pending too long | no |

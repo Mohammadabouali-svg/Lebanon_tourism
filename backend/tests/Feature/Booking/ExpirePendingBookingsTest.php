@@ -10,8 +10,8 @@ use App\Models\Departure;
 use App\Models\Discount;
 use App\Models\Tour;
 use App\Models\User;
-use App\Payments\ChargeResult;
 use App\Payments\PaymentGateway;
+use App\Payments\PaymentStart;
 use App\Services\BookingService;
 use Closure;
 use Illuminate\Console\Scheduling\Event;
@@ -59,7 +59,7 @@ class ExpirePendingBookingsTest extends TestCase
         {
             public function __construct(private readonly Closure $onCharge) {}
 
-            public function charge(int $amountCents, string $currency, string $description): ChargeResult
+            public function startPayment(Booking $booking): PaymentStart
             {
                 return ($this->onCharge)();
             }
@@ -169,7 +169,7 @@ class ExpirePendingBookingsTest extends TestCase
             $this->travel(20)->minutes();
             Artisan::call('bookings:expire-pending');
 
-            return ChargeResult::approved('late_charge');
+            return PaymentStart::paid('late_charge');
         });
 
         $this->actingAs($traveler)

@@ -255,10 +255,15 @@ book a tour for $0.
 The spots stepper is debounced (`hooks/useDebouncedValue.ts`): clicking "+"
 five times quickly sends one quote request, not five.
 
-Card payments: in development a fake gateway approves them, and the page
-says so. **No card-number input exists anywhere in this app.** With a real
-provider (e.g. Stripe), the card is typed into the provider's own embedded
-form, so card data never touches our code or servers.
+Card payments: **no card-number input exists anywhere in this app.** With
+the fake gateway the booking comes back confirmed at once. With Stripe
+(Exercise 9, D26) it comes back `pending` with a `checkout_url`, and
+`BookingPage` sends the browser there with `window.location.assign()`: the
+card is typed on Stripe's own page, so card data never touches our code or
+servers. Stripe sends the traveler back to `/bookings?paid=<reference>`.
+`MyBookingsPage` only *reflects* the status the server reports (the webhook
+confirms, not the return): while a booking is pending, `useMyBookings`
+refetches every 3 seconds, and the card shows a "Continue to payment" link.
 
 ## 7.9 Other things worth noticing
 

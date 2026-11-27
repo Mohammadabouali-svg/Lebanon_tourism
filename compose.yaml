@@ -110,5 +110,30 @@ services:
       - "127.0.0.1:${MAILPIT_PORT:-8025}:8025"
     restart: unless-stopped
 
+  stripe:
+    # Stripe test mode, locally (Exercise 9). Stripe's servers cannot reach
+    # localhost, so the official Stripe CLI receives the webhook events over
+    # an outgoing connection and forwards them, signed, to our API.
+    #
+    # Not started by default (profile). Start it only with PAYMENT_GATEWAY=stripe:
+    #   docker compose --profile stripe up -d stripe
+    #   docker compose logs stripe     # shows "Your webhook signing secret is whsec_..."
+    # Put that whsec_ value in STRIPE_WEBHOOK_SECRET (backend/.env).
+    #
+    # The CLI authenticates with STRIPE_SECRET from backend/.env (test key).
+    profiles: ["stripe"]
+    image: stripe/stripe-cli:v1.21.8
+    env_file: backend/.env
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - >-
+        export STRIPE_API_KEY="$$STRIPE_SECRET" &&
+        exec stripe listen
+        --forward-to http://nginx/api/webhooks/stripe
+        --events checkout.session.completed,checkout.session.expired,checkout.session.async_payment_succeeded,checkout.session.async_payment_failed
+    depends_on:
+      - nginx
+    restart: unless-stopped
+
 volumes:
   pgdata:

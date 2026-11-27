@@ -107,6 +107,14 @@ bookings from Stripe's webhook rather than from the browser redirect, and
 verify the webhook signature. Bind it in `AppServiceProvider` when
 `PAYMENT_GATEWAY=stripe`.
 
+*Implemented.* `StripePaymentGateway` creates a Checkout Session with Laravel's
+`Http` client (no SDK); `POST /api/webhooks/stripe` checks the signature by
+hand (`StripeWebhookSignature`) and confirms or expires the booking through
+`BookingService`, safely when Stripe repeats an event; a `stripe` compose
+service runs the Stripe CLI locally (D26). Tests in `StripeCheckoutTest` and
+`StripeWebhookSignatureTest`. Write-up:
+[exercises/09-stripe-gateway.md](exercises/09-stripe-gateway.md).
+
 **10. Recurring departures.** Today a tour has exactly one date. Real tour
 operators run the same tour every Saturday. Introduce a `departures` table
 (tour, date, capacity, booked_spots) and move booking and capacity there.

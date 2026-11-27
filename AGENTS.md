@@ -66,7 +66,8 @@ make artisan c="make:migration add_x_to_y"
 ```
 
 Dev containers (`compose.yaml`): `php`, `queue`, `nginx`, `frontend`, `db`,
-`mailpit`. There is **no scheduler in dev**; `compose.prod.yaml` adds one
+`mailpit`, plus `stripe` (Stripe CLI forwarding webhooks, profile `stripe`,
+only with `PAYMENT_GATEWAY=stripe`: docs/01 "Card payments with Stripe"). There is **no scheduler in dev**; `compose.prod.yaml` adds one
 (`schedule:work`). The test DB `lebanon_tourism_test` is created by
 `docker/postgres/init/01-create-test-database.sh` on first volume creation.
 
@@ -105,7 +106,7 @@ second origin or CORS config.
 | `app/Http/Resources/` | Output shaping. Models are never returned directly. |
 | `app/Policies/` | Record-level authorization (`TourPolicy`, `DeparturePolicy` (delegates to `TourPolicy`), `BookingPolicy`, `ReviewPolicy`) |
 | `app/Services/` | Business rules: `BookingService`, `PricingService` (+ `Quote`), `WalletService`, `TourService`, `DepartureService` (operator dates), `ReviewService` (review + photo files), `AdminUserService` (admin account actions, audited), `AuditLog` (writes `audit_events` inside the caller's transaction) |
-| `app/Payments/` | `PaymentGateway` interface, `ChargeResult`, `FakePaymentGateway` (approves in dev, declines in prod) |
+| `app/Payments/` | `PaymentGateway` interface (`startPayment()` → `PaymentStart`: paid / declined / redirect / unavailable), `FakePaymentGateway` (approves in dev, declines in prod), `StripePaymentGateway` (Checkout Session via `Http`, no SDK), `StripeWebhookSignature` (HMAC check for `POST /api/webhooks/stripe`, D26) |
 | `app/Queries/` | Reporting queries (`BookingStats`) — aggregate in SQL |
 | `app/Exports/`, `app/Support/CsvExport.php` | CSV with formula-injection protection |
 | `app/Support/` | `ImageUploader` (re-encode to WebP), `Money`, `Search` (LIKE escaping) |
@@ -412,7 +413,7 @@ browser redirect → card data never touches our server.
 
 | Need | Read |
 |---|---|
-| Why a choice was made | `docs/decisions.md` (D1–D25) |
+| Why a choice was made | `docs/decisions.md` (D1–D26) |
 | Setup / troubleshooting | `docs/01-getting-started.md` |
 | Request path, folder map | `docs/02-architecture.md` |
 | Sessions, CSRF, roles, policies | `docs/03-authentication.md` |
@@ -447,7 +448,7 @@ Update the status column as work lands.
 | 7 | CSP header | `docker/nginx/security-headers.conf` included at server level + every location with its own `add_header` (fixes headers missing on `index.html`, bundles, `/storage`); page CSP `default-src 'self'`, `img-src 'self' blob:`, no `unsafe-*`; other responses `default-src 'none'`; enforced, no dev CSP (D22) | done: verified 2026-11-25 (curl -I all locations, browser console clean as guest/traveler/operator/admin on prod stack) |
 | 12 | Audit log | `audit_events` (migration `2026_11_26_000500`): actor FK restrict, `AuditAction` enum + CHECK, polymorphic subject `user`/`tour` without FK (morph map `tour`), `changes jsonb` (only what changed; ledger id for credits), triggers refuse UPDATE/DELETE/TRUNCATE; 7 actions written by `AuditLog::record()` inside the change's transaction from new `AdminUserService` and `TourService::moderate()`, only when something changed, e-mails after commit; `GET /api/admin/audit-events` + `/admin/audit` page (D25); 27 tests in `AuditLogTest` + `AccessControlTest` row | done: verified 2026-11-27 (239 tests, pint, build, lint, migrate, manual check admin/traveler/operator/guest) |
 | 11 | Faster search | `pg_trgm` GIN `tours_title_trgm` + `tours_city_id_index` (migration `2026_11_26_000400`, `down()` drops the extension without CASCADE); search looks up city ids first, then `title ILIKE ? OR city_id IN (...)` (an `OR EXISTS` blocks both indexes); same semantics, no FTS; benchmark scripts in `backend/database/benchmarks/` (100k tours, throwaway DB `lebanon_tourism_bench`); 3 characterisation tests in `TourCatalogTest`, 3 in `TourSearchIndexTest` (planner checked with `enable_seqscan = off`) (D24) | done: verified 2026-11-26 (see write-up) |
-| 9 | Stripe gateway | Checkout + signed webhook confirms; bind when `PAYMENT_GATEWAY=stripe` | todo |
+| 9 | Stripe gateway | `startPayment()` → `PaymentStart` replaces `charge()`; `StripePaymentGateway` via `Http` (no SDK), card-only Checkout Session, 31 min; `POST /api/webhooks/stripe` (public, `throttle:webhooks`, hand-written HMAC check, 5 min replay window) confirms on `completed`/`async_payment_succeeded`, releases on `expired`/`async_payment_failed`; idempotent via `payment_reference` (unique) under the booking lock; migration `2026_11_27_000100` (`payment_session_id` unique, `checkout_url`, CHECK `bookings_checkout_only_for_cards`); timeout 35 min with Stripe, 15 with fake; `stripe` compose service (profile); `DemoSeeder` always fake (D26); 25 tests in `StripeCheckoutTest`, `StripeWebhookSignatureTest`, `AccessControlTest` | done: verified 2026-11-27 (real Stripe test mode: pay, expire, card-only) |
 | 10 | Recurring departures | `departures (tour_id, starts_on, capacity, booked_spots)`, length stays on the tour (`duration_days` plain, 1..30); expand → migrate → contract (`2026_11_26_000100`/`000200`/`000300`), `down()` refuses unless one departure per tour; `bookings.departure_id` + kept `tour_id` with composite FK; booking/quote at `POST /api/departures/{departure}/...`; locks tour FOR SHARE then departure FOR UPDATE; operator CRUD + weekly series (`weeks` ≤ 26), codes `departure_has_bookings`, `departure_started` (D23) | done: verified 2026-11-25 (204 tests, pint, build, lint, manual check guest/traveler/operator/admin; dev rollback + re-migrate identical) |
 
 ## 12. Git

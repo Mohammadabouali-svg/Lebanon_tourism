@@ -14,6 +14,7 @@ the tests that prove it, and how it was verified.
 | 6 | Admin moderation lock | [06-moderation-lock.md](06-moderation-lock.md) |
 | 7 | Content-Security-Policy | [07-csp-header.md](07-csp-header.md) |
 | 8 | Review photos gallery | [08-review-photos.md](08-review-photos.md) |
+| 9 | Stripe gateway | [09-stripe-gateway.md](09-stripe-gateway.md) |
 | 10 | Recurring departures | [10-recurring-departures.md](10-recurring-departures.md) |
 | 11 | Faster search | [11-faster-search.md](11-faster-search.md) (raw plans in [11-faster-search/](11-faster-search/)) |
 | 12 | Audit log | [12-audit-log.md](12-audit-log.md) |

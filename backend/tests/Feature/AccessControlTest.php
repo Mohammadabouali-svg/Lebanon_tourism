@@ -109,6 +109,16 @@ class AccessControlTest extends TestCase
         $this->assertNull($user->fresh()->pending_email);
     }
 
+    public function test_the_stripe_webhook_needs_no_login_but_refuses_unsigned_requests(): void
+    {
+        config(['payments.stripe.webhook_secret' => 'whsec_access_test']);
+
+        // Stripe has no session, so the route is outside the auth groups
+        // (no 401). Its only protection is the signature: 400 without one.
+        $this->postJson('/api/webhooks/stripe', ['type' => 'checkout.session.completed'])
+            ->assertStatus(400);
+    }
+
     public function test_api_errors_are_json_never_html(): void
     {
         $this->get('/api/does-not-exist')

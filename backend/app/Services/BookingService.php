@@ -13,6 +13,7 @@ use App\Models\Discount;
 use App\Models\Tour;
 use App\Models\User;
 use App\Payments\PaymentGateway;
+use App\Payments\PaymentOutcome;
 use Carbon\CarbonInterface;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -85,8 +86,14 @@ final class BookingService
      * The call may take seconds or time out, and every other booking for this
      * departure would wait behind it. So the work is split in three steps:
      *   1. short transaction: hold the spots with a `pending` booking
-     *   2. no transaction:    charge the card
-     *   3. short transaction: confirm the booking, or release the spots
+     *   2. no transaction:    start the payment with the gateway
+     *   3. short transaction: depending on the gateway's answer,
+     *        paid        → confirm the booking
+     *        redirect    → store the Checkout Session; the booking stays
+     *                      pending until Stripe's webhook settles it
+     *                      (confirmCheckout / expireCheckout)
+     *        declined,
+     *        unavailable → release the spots
      */
     private function bookWithCard(User $user, Departure $departure, int $spots, ?string $discountCode): Booking
     {
@@ -100,19 +107,101 @@ final class BookingService
             return $this->markPaid($booking, null);
         }
 
-        $result = $this->gateway->charge(
-            $booking->total_cents,
-            config('payments.currency'),
-            "Booking {$booking->reference}",
-        );
+        $start = $this->gateway->startPayment($booking);
 
-        if (! $result->successful) {
-            $this->releaseSpots($booking, BookingStatus::Failed);
+        return match ($start->outcome) {
+            PaymentOutcome::Paid => $this->markPaid($booking, $start->reference),
+            PaymentOutcome::Redirect => $this->awaitCheckout($booking, $start->sessionId, $start->checkoutUrl),
+            PaymentOutcome::Declined => $this->failPayment($booking, BusinessRuleException::paymentDeclined($start->failureMessage)),
+            PaymentOutcome::Unavailable => $this->failPayment($booking, BusinessRuleException::paymentUnavailable()),
+        };
+    }
 
-            throw BusinessRuleException::paymentDeclined($result->failureMessage);
+    /** Nothing was paid: give the spots back, then report why. */
+    private function failPayment(Booking $booking, BusinessRuleException $reason): never
+    {
+        $this->releaseSpots($booking, BookingStatus::Failed);
+
+        throw $reason;
+    }
+
+    /**
+     * Remembers the Checkout Session, so Stripe's webhook can find the
+     * booking and the traveler can return to an unfinished payment.
+     *
+     * Stored before the URL is given to the browser, so a webhook (which
+     * needs the traveler to have paid on that page) always finds it.
+     */
+    private function awaitCheckout(Booking $booking, string $sessionId, string $checkoutUrl): Booking
+    {
+        return DB::transaction(function () use ($booking, $sessionId, $checkoutUrl) {
+            /** @var Booking $locked */
+            $locked = Booking::query()->whereKey($booking->getKey())->lockForUpdate()->firstOrFail();
+
+            $locked->forceFill([
+                'payment_session_id' => $sessionId,
+                'checkout_url' => $checkoutUrl,
+            ])->save();
+
+            return $locked;
+        });
+    }
+
+    /*
+    | Stripe's webhook: the Checkout Session was paid (Exercise 9).
+    |
+    | Public on purpose: StripeWebhookController calls it after verifying the
+    | signature. Returns the booking only when this call confirmed it, so the
+    | caller sends the confirmation e-mail exactly once. Returns null when
+    | there is nothing to announce:
+    |   - no booking has this session (another app on the same Stripe
+    |     account, or a session we never stored);
+    |   - the amount or currency differ from the booking's total: never
+    |     confirm a booking for less than its price (logged as an error);
+    |   - the payment was already recorded (Stripe delivers "at least once");
+    |   - the booking had expired: it is refunded to the wallet instead.
+    */
+    public function confirmCheckout(string $sessionId, string $paymentReference, int $amountCents, string $currency): ?Booking
+    {
+        // total_cents never changes after the booking is created, so it can
+        // be compared before taking the lock.
+        $booking = Booking::query()->where('payment_session_id', $sessionId)->first();
+
+        if ($booking === null) {
+            Log::info('Stripe reported a payment for an unknown Checkout Session; ignored.', ['session' => $sessionId]);
+
+            return null;
         }
 
-        return $this->markPaid($booking, $result->reference);
+        if ($amountCents !== $booking->total_cents || strtolower($currency) !== strtolower(config('payments.currency'))) {
+            Log::error('Stripe reported a payment that does not match the booking; not confirmed.', [
+                'booking' => $booking->reference,
+                'expected' => [$booking->total_cents, config('payments.currency')],
+                'reported' => [$amountCents, $currency],
+            ]);
+
+            return null;
+        }
+
+        return $this->settlePayment($booking, $paymentReference);
+    }
+
+    /*
+    | Stripe's webhook: the Checkout Session expired unpaid. The spots and the
+    | discount use go back, like a declined card. Locked and re-checked, so a
+    | repeated event (or a race with bookings:expire-pending) releases them
+    | only once.
+    */
+    public function expireCheckout(string $sessionId): void
+    {
+        DB::transaction(function () use ($sessionId) {
+            /** @var Booking|null $locked */
+            $locked = Booking::query()->where('payment_session_id', $sessionId)->lockForUpdate()->first();
+
+            if ($locked?->status === BookingStatus::Pending) {
+                $this->releaseSpots($locked, BookingStatus::Failed);
+            }
+        });
     }
 
     /**
@@ -171,7 +260,8 @@ final class BookingService
     | No refund here: we cannot ask the (fake) gateway whether a stuck
     | booking was charged, and crediting a card that was never charged would
     | hand out free money. Each expiry is logged for manual reconciliation.
-    | See D18 in docs/decisions.md.
+    | See D18 in docs/decisions.md. With Stripe, a payment reported after
+    | this expiry is credited by confirmCheckout() (D26).
     |
     | Returns how many bookings were expired.
     */
@@ -298,22 +388,52 @@ final class BookingService
     }
 
     /**
-     * Confirms a pending card booking after the charge succeeded.
-     *
-     * The booking is locked and re-checked first. If the charge took longer
-     * than the pending timeout, bookings:expire-pending may already have
-     * marked it failed and given its spots to someone else. Confirming it
-     * then would overbook the departure. Instead the booking stays failed and,
-     * because we know the card was charged, the amount is credited to the
-     * traveler's wallet (the same travel-credit policy as cancel()).
+     * Confirms a card booking right after the gateway answered "paid"
+     * (the fake gateway, or a free booking).
      *
      * @throws BusinessRuleException when the booking expired during the charge
      */
     private function markPaid(Booking $booking, ?string $paymentReference): Booking
     {
-        $confirmed = DB::transaction(function () use ($booking, $paymentReference) {
+        $confirmed = $this->settlePayment($booking, $paymentReference);
+
+        // Nobody else settles a booking during this request, so null here
+        // means it expired and was refunded. Thrown after the transaction,
+        // so the wallet credit is committed.
+        if ($confirmed === null) {
+            throw BusinessRuleException::bookingExpired();
+        }
+
+        return $confirmed;
+    }
+
+    /**
+     * Records that a pending card booking was paid. Returns the booking if
+     * this call confirmed it, null otherwise.
+     *
+     * The booking is locked and re-checked first:
+     *   - payment_reference already set: this payment was recorded before
+     *     (a repeated webhook). Nothing changes. Without this check a
+     *     repeat would look like the late case below and pay a second
+     *     refund (the unique index on payment_reference backs this up);
+     *   - no longer pending: the payment took longer than the pending
+     *     timeout, so bookings:expire-pending may already have marked it
+     *     failed and given its spots to someone else. Confirming it then
+     *     would overbook the departure. Instead the booking stays failed and,
+     *     because we know the card was charged, the amount is credited to the
+     *     traveler's wallet (the same travel-credit policy as cancel(), D18).
+     *     The payment reference is stored so that a repeat is recognised;
+     *   - still pending: confirmed.
+     */
+    private function settlePayment(Booking $booking, ?string $paymentReference): ?Booking
+    {
+        return DB::transaction(function () use ($booking, $paymentReference) {
             /** @var Booking $locked */
             $locked = Booking::query()->whereKey($booking->getKey())->lockForUpdate()->firstOrFail();
+
+            if ($locked->payment_reference !== null) {
+                return null;
+            }
 
             if ($locked->status !== BookingStatus::Pending) {
                 $locked->load('user.wallet');
@@ -327,7 +447,9 @@ final class BookingService
                     );
                 }
 
-                Log::warning('A card charge succeeded after its booking expired; refunded to the wallet.', [
+                $locked->forceFill(['payment_reference' => $paymentReference])->save();
+
+                Log::warning('A card payment succeeded after its booking expired; refunded to the wallet.', [
                     'booking' => $locked->reference,
                     'payment_reference' => $paymentReference,
                 ]);
@@ -343,13 +465,6 @@ final class BookingService
 
             return $locked;
         });
-
-        // Thrown after the transaction, so the wallet credit is committed.
-        if ($confirmed === null) {
-            throw BusinessRuleException::bookingExpired();
-        }
-
-        return $confirmed;
     }
 
     /** Gives the spots (and the discount use) back and records the new status. */

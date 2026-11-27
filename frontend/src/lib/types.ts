@@ -127,6 +127,8 @@ export interface Booking {
   discount_code?: string | null
   payment_method: PaymentMethod
   status: BookingStatus
+  /** Stripe's payment page while a card booking waits for payment (Exercise 9); null otherwise. */
+  checkout_url: string | null
   can_cancel?: boolean
   paid_at: string | null
   cancelled_at: string | null

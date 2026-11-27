@@ -138,6 +138,40 @@ make npm c="install some-package"
 Reading e-mails: register a new account in the app, then open Mailpit at
 http://localhost:8025 and click the verification link.
 
+### Card payments with Stripe (test mode)
+
+By default card payments use the fake gateway, which approves at once. To
+pay through real Stripe Checkout pages (Exercise 9) you need a free Stripe
+account; **test mode** never moves real money.
+
+1. In the Stripe dashboard (test mode), copy the **secret key** `sk_test_...`.
+   The publishable key `pk_test_...` is not needed: Checkout is hosted by
+   Stripe, our pages load no Stripe script.
+2. In `backend/.env` (never committed) set:
+   ```
+   PAYMENT_GATEWAY=stripe
+   STRIPE_SECRET=sk_test_...
+   ```
+3. Start the Stripe CLI container. Stripe cannot reach `localhost`, so it
+   receives the webhook events and forwards them to our API:
+   ```bash
+   docker compose --profile stripe up -d stripe
+   docker compose logs stripe      # "Your webhook signing secret is whsec_..."
+   ```
+4. Put that value in `STRIPE_WEBHOOK_SECRET=whsec_...` in `backend/.env`,
+   then `docker compose restart php queue` so both read the new settings.
+5. Book a tour as a traveler, choose *Card*, and pay with a
+   [test card](https://docs.stripe.com/testing): `4242 4242 4242 4242`
+   (approved), `4000 0000 0000 0002` (declined), any future date, any CVC.
+   Back on *My bookings* the booking turns *Confirmed* when the webhook
+   arrives (`docker compose logs -f stripe` shows each event and our answer).
+
+Abandoned payment: `docker compose exec stripe stripe checkout sessions expire cs_test_...`
+sends `checkout.session.expired`, which releases the spots. To go back to
+the fake gateway, set `PAYMENT_GATEWAY=fake`, restart `php queue`, and stop
+the CLI with `docker compose stop stripe`. How it works:
+[05-bookings-and-payments.md](05-bookings-and-payments.md#stripe-checkout-and-its-webhook-exercise-9).
+
 ## Editors
 
 - **VS Code**: on Windows, install the "WSL" extension and open the folder

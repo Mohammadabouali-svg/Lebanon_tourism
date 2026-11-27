@@ -2,10 +2,12 @@
 
 namespace App\Payments;
 
+use App\Models\Booking;
 use Illuminate\Support\Str;
 
 /*
-| Stand-in gateway for development and tests: approves every charge.
+| Stand-in gateway for development and tests: approves every payment at
+| once, without leaving our site.
 |
 | Safety net: in production it declines everything, so a forgotten
 | PAYMENT_GATEWAY=fake can never hand out free tours.
@@ -21,14 +23,14 @@ final class FakePaymentGateway implements PaymentGateway
         return new self(approve: false);
     }
 
-    public function charge(int $amountCents, string $currency, string $description): ChargeResult
+    public function startPayment(Booking $booking): PaymentStart
     {
         if (app()->isProduction()) {
-            return ChargeResult::declined('Card payments are not configured.');
+            return PaymentStart::declined('Card payments are not configured.');
         }
 
         return $this->approve
-            ? ChargeResult::approved('fake_'.Str::lower(Str::random(20)))
-            : ChargeResult::declined('The card was declined.');
+            ? PaymentStart::paid('fake_'.Str::lower(Str::random(20)))
+            : PaymentStart::declined('The card was declined.');
     }
 }
